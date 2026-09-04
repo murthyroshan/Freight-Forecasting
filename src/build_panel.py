@@ -16,9 +16,14 @@ Design decisions, and why:
   work. It is also the only index whose returns track BDRY strongly
   enough (weekly r = +0.671) for the live proxy to be defensible.
 
-  No PortWatch features. PortWatch starts 2019-01-01 and the Baltic
-  series ends 2019-07-31 - 211 calendar days of overlap. Congestion
-  belongs to Module B, which is deterministic.
+  The Capesize series is SPLICED. The licensed Mendeley copy runs to
+  2019-07-31; past that the series continues from a public mirror of
+  the same Baltic indices, which fetch_data.py validates against the
+  licensed copy before writing. See baltic() below.
+
+  No PortWatch features. PortWatch starts 2019-01-01, and although the
+  spliced Baltic series now reaches today, congestion belongs to
+  Module B, which is deterministic and needs no fitting.
 
 Run:  python build_panel.py
 """
@@ -44,6 +49,8 @@ def load(name):
 
 
 def ret(s, n):
+    # Same guard as the target: a non-positive level has no log return.
+    s = s.where(s > 0) if (s <= 0).any() else s
     """n-period LOG return, ending at t. Uses no future data.
 
     Log for the same reason as the target: it keeps a move off a small
@@ -52,8 +59,46 @@ def ret(s, n):
     return np.log(s / s.shift(n))
 
 
+def baltic():
+    """The Capesize/Panamax/Supramax series, spliced.
+
+    The licensed Mendeley copy runs to 2019-07-31 and is used unchanged
+    up to that date. Past it the series continues from the East Money
+    mirror, which src/fetch_data.py refuses to write unless it
+    reproduces the licensed copy on the overlapping days.
+
+    The join only ever APPENDS - no licensed value is overwritten - so
+    the two halves cannot disagree about a day they both cover.
+    """
+    lic = load('baltic_indices').set_index('date').sort_index()
+    cols = ['capesize', 'panamax', 'supramax']
+    # A missing extension must be LOUD. Falling back silently gives a
+    # 2019-only panel that looks perfectly normal - same columns, no
+    # error - and every number downstream would quietly describe a
+    # different model from the one the documentation describes.
+    ext_path = os.path.join(RAW, 'baltic_extension.parquet')
+    if not os.path.exists(ext_path):
+        print('  WARNING no baltic_extension.parquet - the panel will stop '
+              'at %s' % lic.index.max().date())
+        print('          Run: python -m src.fetch_data')
+        return lic[cols]
+    ext = pd.read_parquet(ext_path).set_index('date').sort_index()
+    ext = ext[ext.index > lic.index.max()]
+    if ext.empty:
+        print('  WARNING baltic_extension.parquet carries nothing past %s - '
+              'the panel will stop there' % lic.index.max().date())
+        return lic[cols]
+    out = pd.concat([lic[cols], ext[cols]]).sort_index()
+    # A splice that introduces a jump would put a break in the middle of
+    # the target. Measured: the largest move within a week of the join is
+    # 3.4%, against a 3.2% typical daily move - i.e. nothing unusual.
+    if out.index.duplicated().any():
+        raise ValueError('the splice produced duplicate dates')
+    return out
+
+
 def build():
-    bal = load('baltic_indices').set_index('date').sort_index()
+    bal = baltic()
 
     # Market series, aligned onto Baltic's trading calendar. Baltic
     # publishes on London business days; Yahoo series have their own
@@ -79,7 +124,18 @@ def build():
     # +311% and skew +3.1 / kurtosis +25.6, and RMSE would then be
     # decided by about four days in 2019. Logs give skew +0.5 and
     # kurtosis +3.2 over the identical rows.
-    df['y'] = np.log(cape.shift(-HORIZON) / cape)
+    # The index went NEGATIVE for the first time in early 2020 - 44
+    # sessions between 2020-01-31 and 2020-05-14, bottoming at -372,
+    # because the Capesize basis is a timecharter equivalent and a TCE
+    # can go below zero when the market collapses. A log return is
+    # undefined there, so those days are excluded rather than patched.
+    #
+    # It costs 12 rows of 3,296, and every alternative target we tested
+    # on the extended series scored WORSE: simple returns -2.3%, an
+    # offset log -2.5%, and a volatility-standardised difference -21.9%,
+    # against +5.5% for the log return kept here.
+    pos = cape.where(cape > 0)
+    df['y'] = np.log(pos.shift(-HORIZON) / pos)
 
     # --- tier 1: the target's own dynamics ---------------------------
     # Freight is strongly autocorrelated and strongly mean-reverting;
@@ -96,7 +152,7 @@ def build():
     # --- tier 2: fleet structure -------------------------------------
     # Capesize/Panamax is the classic tightness spread: when Capes are
     # scarce, cargo splits down into Panamaxes and the ratio compresses.
-    df['cape_pmx_ratio'] = np.log(cape / bal['panamax'])
+    df['cape_pmx_ratio'] = np.log(pos / bal['panamax'].where(bal['panamax'] > 0))
     df['pmx_ret_5'] = ret(bal['panamax'], 5)
     df['smx_ret_5'] = ret(bal['supramax'], 5)
 
@@ -145,6 +201,14 @@ if __name__ == '__main__':
     print('=' * 64)
     print('  rows      %d' % len(df))
     print('  range     %s -> %s' % (df.index.min().date(), df.index.max().date()))
+    # Say which half of the series this panel actually used, so a silent
+    # fallback to the licensed-only window is visible in the output.
+    lic_end = pd.to_datetime(load('baltic_indices')['date']).max()
+    if df.index.max() > lic_end:
+        print('  source    licensed to %s, then extended to %s'
+              % (lic_end.date(), df.index.max().date()))
+    else:
+        print('  source    LICENSED ONLY - no extension was applied')
     print('  features  %d' % len(feats))
     print('  horizon   %d business days' % HORIZON)
     # Overlapping windows mean rows are not independent. State the

@@ -339,7 +339,7 @@ def model_uncertainty():
                    'log return, the %s percentile of its own history. A wide '
                    'band means the model is uncertain, not that rates will '
                    'move.' % (last, _ord(pctile))),
-        'basis': ('measured: locally weighted conformal intervals, 82.0% '
+        'basis': ('measured: locally weighted conformal intervals, 81.7% '
                   'realised coverage against an 80% target'),
     }
 

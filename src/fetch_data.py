@@ -14,6 +14,12 @@ Sources, all free and keyless:
 
 Run:  python fetch_data.py           (skips anything already cached)
       python fetch_data.py --force   (refetch everything)
+
+LICENCE NOTE. The Baltic series past 2019-07-31 comes from a public
+mirror with no stated licence. It is fetched at runtime and never
+committed - data/ is gitignored - so nothing proprietary is
+redistributed here. Production would need a Baltic Exchange
+licence.
 """
 
 import os
@@ -63,7 +69,7 @@ TICKERS = {
     'NMM':      'nmm',
     # GNK deliberately omitted: it correlates 0.43-0.53 with the three
     # owners above and its history starts 18 months later, so a fourth
-    # name in the average buys nothing at ~202 effective observations.
+    # name in the average buys nothing at ~394 effective observations.
     'BHP':      'bhp',       # miners - the cargo side
     'RIO':      'rio',
     'WHC.AX':   'whc',       # Whitehaven, Australian coal
@@ -144,7 +150,7 @@ def report(name, df, datecol='date'):
 
 # ---------------------------------------------------------------- baltic
 def fetch_baltic():
-    print('\n[1/4] Baltic indices (Mendeley, CC BY 4.0)')
+    print('\n[1/5] Baltic indices (Mendeley, CC BY 4.0)')
     if cached('baltic_indices'):
         return
     xls = os.path.join(RAW, 'mendeley_bdi.xls')
@@ -175,9 +181,136 @@ def fetch_baltic():
     report('baltic_indices', df)
 
 
+# ------------------------------------------------- baltic, past 2019
+# The licensed Mendeley copy stops on 2019-07-31. East Money, a public
+# Chinese financial portal, mirrors the same Baltic Exchange indices
+# through a keyless JSON API, which is what carries the series to today.
+#
+# LICENCE. The Baltic Exchange indices are proprietary and East Money
+# states no licence for its mirror, so this project fetches at runtime
+# and redistributes nothing - data/ is gitignored and no index value is
+# committed. Production would need a Baltic Exchange licence.
+#
+# It is validated rather than trusted: fetch_baltic_extension() refuses
+# to write anything unless the mirror reproduces the licensed copy on
+# the overlapping days (see MIN_CORRELATION / MAX_P99_REL_GAP below).
+EASTMONEY = 'https://datacenter-web.eastmoney.com/api/data/v1/get'
+EASTMONEY_IDS = {'capesize': 'EMI00107666',
+                 'panamax': 'EMI00107665',
+                 'supramax': 'EMI00107667'}
+
+# HOW THE MIRROR IS VALIDATED, and why not by exact matching.
+#
+# Byte-identical agreement over 2012-2019 is 99.5% for Capesize and
+# 99.2% for Panamax, but only 42.9% for Supramax. That is not a
+# different index - the level correlation is 0.9992 and the median
+# disagreement is 0.22% - it is noisier early revisions. Gating on the
+# exact-match RATE would therefore have left Supramax about three points
+# above its floor, and because a single failing series aborts the whole
+# fetch, one bad year of revisions would have silently killed the
+# Capesize extension too: the series the model actually needs.
+#
+# So agreement is measured in VALUE, which is what "the same series"
+# actually means. Measured: correlation 1.0000 / 1.0000 / 0.9992, and
+# 99th-percentile relative gaps of 0.000% / 0.000% / 3.367%.
+MIN_CORRELATION = 0.99
+MAX_P99_REL_GAP = 0.05
+
+# Whatever the rest of the history looks like, the two sources must
+# agree EXACTLY on the day the splice happens, or the halves sit on
+# different bases and the join puts a step in the middle of the target.
+JOIN_TOLERANCE = 1e-9
+
+
+def _eastmoney(indicator, timeout=45):
+    """Every daily print for one indicator, oldest first."""
+    rows = []
+    for page in range(1, 25):
+        r = requests.get(EASTMONEY, timeout=timeout, params={
+            'reportName': 'RPT_INDUSTRY_INDEX',
+            'columns': 'REPORT_DATE,INDICATOR_VALUE',
+            'filter': '(INDICATOR_ID="%s")' % indicator,
+            'sortColumns': 'REPORT_DATE', 'sortTypes': '-1',
+            'pageSize': '500', 'pageNumber': str(page),
+            'source': 'WEB', 'client': 'WEB'})
+        if r.status_code != 200:
+            raise RuntimeError('east money returned HTTP %d' % r.status_code)
+        page_rows = (r.json().get('result') or {}).get('data')
+        if not page_rows:
+            break
+        rows += page_rows
+    if not rows:
+        raise RuntimeError('east money returned no rows for %s' % indicator)
+    d = pd.DataFrame(rows)
+    d['date'] = pd.to_datetime(d['REPORT_DATE']).dt.normalize()
+    d['value'] = pd.to_numeric(d['INDICATOR_VALUE'])
+    return (d[['date', 'value']].drop_duplicates('date')
+            .sort_values('date').reset_index(drop=True))
+
+
+def fetch_baltic_extension():
+    print('\n[2/5] Baltic extension past 2019 (East Money mirror)')
+    if cached('baltic_extension'):
+        return
+    base = os.path.join(RAW, 'baltic_indices.parquet')
+    if not os.path.exists(base):
+        print('  SKIP  fetch the licensed Mendeley copy first')
+        return
+    lic = pd.read_parquet(base)
+    lic['date'] = pd.to_datetime(lic['date']).dt.normalize()
+    cut = lic['date'].max()
+
+    out = {}
+    for col, indicator in EASTMONEY_IDS.items():
+        try:
+            feed = _eastmoney(indicator)
+        except Exception as exc:
+            print('  FAIL %-10s %s' % (col, exc))
+            return
+        # Validate on the overlap BEFORE keeping anything. A mirror that
+        # cannot reproduce the licensed copy is a different series, and
+        # splicing it would put a break in the middle of the target.
+        j = lic[['date', col]].merge(
+            feed.rename(columns={'value': 'feed'}), on='date', how='inner')
+        if j.empty:
+            print('  FAIL %-10s no overlapping days to validate against' % col)
+            return
+        gap = ((j[col] - j['feed']).abs()
+               / j[col].abs().clip(lower=1.0))
+        corr = float(j[col].corr(j['feed']))
+        p99 = float(gap.quantile(0.99))
+        exact = float(((j[col] - j['feed']).abs() < JOIN_TOLERANCE).mean())
+        if not (corr == corr) or corr < MIN_CORRELATION:
+            print('  FAIL %-10s correlates %.4f with the licensed copy - '
+                  'that is a different series' % (col, corr))
+            return
+        if p99 > MAX_P99_REL_GAP:
+            print('  FAIL %-10s disagrees by %.2f%% at the 99th percentile'
+                  % (col, p99 * 100))
+            return
+        # And the join itself must be continuous: the last licensed day
+        # has to match, or the two halves are on different bases.
+        edge = j[j['date'] == cut]
+        if edge.empty or abs(float(edge[col].iloc[0])
+                             - float(edge['feed'].iloc[0])) > JOIN_TOLERANCE:
+            print('  FAIL %-10s the two sources disagree on %s, the join day'
+                  % (col, cut.date()))
+            return
+        print('  ok   %-10s corr %.4f  p99 gap %.2f%%  (%.1f%% of %d days '
+              'byte-identical)' % (col, corr, p99 * 100, exact * 100, len(j)))
+        out[col] = feed.set_index('date')['value']
+
+    ext = pd.DataFrame(out)
+    ext = ext[ext.index > cut].dropna(how='all').reset_index()
+    if ext.empty:
+        print('  FAIL the mirror carries nothing past %s' % cut.date())
+        return
+    report('baltic_extension', ext)
+
+
 # ---------------------------------------------------------------- yahoo
 def fetch_yahoo():
-    print('\n[2/4] Market data (Yahoo Finance)')
+    print('\n[3/5] Market data (Yahoo Finance)')
     import yfinance as yf
     for tk, name in TICKERS.items():
         if cached(name):
@@ -199,7 +332,7 @@ def fetch_yahoo():
 
 # ------------------------------------------------------------ portwatch
 def fetch_portwatch():
-    print('\n[3/4] Port calls (IMF PortWatch)')
+    print('\n[4/5] Port calls (IMF PortWatch)')
     fields = ('date,portid,portname,portcalls,portcalls_dry_bulk,'
               'import,export,import_dry_bulk,export_dry_bulk')
     for pid, name in PORTS.items():
@@ -246,7 +379,7 @@ def fetch_portwatch():
 
 # -------------------------------------------------------------- weather
 def fetch_weather():
-    print('\n[4/4] Weather at discharge ports (Open-Meteo)')
+    print('\n[5/5] Weather at discharge ports (Open-Meteo)')
     for name, (lat, lon) in WEATHER_SITES.items():
         key = 'wx_' + name
         if cached(key):
@@ -280,6 +413,7 @@ if __name__ == '__main__':
     print('  FETCHING RAW DATA' + ('  (--force)' if FORCE else ''))
     print('=' * 64)
     fetch_baltic()
+    fetch_baltic_extension()
     fetch_yahoo()
     fetch_portwatch()
     fetch_weather()

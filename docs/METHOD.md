@@ -50,39 +50,78 @@ fitted by OLS.
 
 | Model | RMSE | MAE | Skill vs no-change | Direction |
 | :--- | ---: | ---: | ---: | ---: |
-| assume no change | 0.2469 | 0.1807 | — | — |
-| momentum (1 feature, OLS) | 0.2342 | 0.1696 | +5.1% | 62.8% |
-| **ridge (17 features)** | **0.2285** | 0.1716 | **+7.5%** | **64.9%** |
-| LightGBM | 0.2330 | 0.1708 | +5.7% | 60.3% |
+| assume no change | 0.2908 | 0.1858 | — | — |
+| momentum (1 feature, OLS) | 0.2777 | 0.1771 | +4.5% | 61.5% |
+| **ridge (17 features)** | **0.2745** | 0.1786 | **+5.6%** | **61.7%** |
+| LightGBM | 0.2810 | 0.1757 | +3.4% | 62.5% |
 
-Per fold, ridge beats the no-change baseline in **6 of 8**. The two losses are
-2017-H1 and 2018-H2 and are shown in the dashboard rather than hidden. Its
-largest edge is fold 7 — the Vale window, where the no-change RMSE blows out to
-0.396 and ridge cuts it to 0.357. It helps most where it matters most.
+Per fold, ridge beats the no-change baseline in **5 of 8**. The three losses are
+2021-H2, 2023-H2 and the most recent year, and all are shown in the dashboard
+rather than hidden. Its largest edge is fold 1 — the COVID collapse, where the
+no-change RMSE blows out to 0.555 and ridge cuts it to 0.494.
+
+### The skill figure is fragile; the direction figure is not
+
+This matters more than the headline. Twelve rows out of 1,971 — all between
+January and May 2020, when the index fell from 207 to about 1 — carry most of
+the measured RMSE skill:
+
+| Sample | Skill | Direction |
+| :--- | ---: | ---: |
+| everything | +5.60% | 61.7% |
+| excluding \|y\| > 2 (2 rows) | +4.38% | 61.7% |
+| excluding \|y\| > 1 (12 rows) | **+2.03%** | 61.5% |
+| excluding Jan–Jun 2020 entirely | +2.87% | 61.4% |
+| only days with the index above 300 | +4.84% | 61.6% |
+
+RMSE skill moves from +5.60% to +2.03%; **direction accuracy barely moves at
+all.** Quote the direction figure. The skill figure is reported here because it
+was measured, not because it is the one to lean on.
+
+### Where the edge lives
+
+Sorted by how much the rate actually moved over the five days:
+
+| Actual move | n | Direction | Lift over the best constant guess |
+| :--- | ---: | ---: | ---: |
+| smallest quartile (0–6.5%) | 493 | 52.3% | −1.6 pp |
+| 2nd quartile (6.5–13.3%) | 493 | 58.2% | +4.3 pp |
+| 3rd quartile (13.3–23.5%) | 493 | 65.7% | +14.6 pp |
+| **largest quartile (23.5%+)** | 493 | **70.4%** | **+17.8 pp** |
+
+Lift is direction accuracy minus the best constant guess on those same rows, so
+it cannot be won by always predicting "up".
+
+The same shape holds on the recent period alone, at a lower level — since 2022
+the largest quartile scores **62.8%** and the smallest **50.9%**. The model adds
+nothing in flat weeks and a great deal in moving ones. A chartering desk only
+acts when the move is large enough to matter, which is exactly where the edge
+sits, and it is why the aggregate looks weak in a calm market: most weeks are
+small-move weeks, and nobody can call those.
 
 ### Why ridge beats the gradient-boosted model
 
 Daily freight autocorrelation is ~0.99 and the five-day targets overlap, so
-1,682 rows is really about **336 effective windows**, and the 1,010 rows the
-model is actually scored on are about **202** — which is the figure the
+3,284 rows is really about **656 effective windows**, and the 1,971 rows the
+model is actually scored on are about **394** — which is the figure the
 significance test uses, and the one `models/metrics.json` records as
 `n_effective`. A normally sized GBM
 memorises that instantly. The feature count is capped at 17 for the same reason.
 
-The significance test uses that smaller number too: 64.9% direction on ~202
-independent windows gives p = 0.0003 — tested against the realised
-up-rate of 51.7% rather than a coin, and Bonferroni-adjusted over the three
-candidate models, since the model tested is the one chosen by this same score. Computed on the 1,010 overlapping rows it
-would be inflated roughly fivefold.
+The significance test uses that smaller number too: 61.7% direction on ~394
+independent windows gives p = 1.0e-05 — tested against the realised
+up-rate of 51.0% rather than a coin, and Bonferroni-adjusted over the three
+candidate models, since the model tested is the one chosen by this same score.
+Computed on the 1,971 overlapping rows it would be inflated roughly fivefold.
 
 ### Intervals
 
 Split-conformal residual quantiles, in the **locally weighted** variant — each
 residual scaled by a volatility estimate known at *t*, then rescaled on the test
-side. Plain split conformal gives **78.4%** coverage for a nominal 80%, because
+side. Plain split conformal gives **81.0%** coverage for a nominal 80%, because
 freight volatility clusters and one global quantile is too narrow in stressed
-regimes. The weighted form reaches **82.0%**, at the cost of a mean interval
-36% wider (0.506 to 0.689). Both figures are produced by
+regimes. The weighted form reaches **81.7%**, at the cost of a mean interval
+20% wider (0.568 to 0.682). Both figures are produced by
 `walk_forward(..., conformal='plain'|'local')` on the same folds with the same
 finite-sample-corrected quantile, and both are written to `models/metrics.json`
 — neither is a number typed into this file.
@@ -91,12 +130,16 @@ finite-sample-corrected quantile, and both are written to `models/metrics.json`
 
 ## 2 · Falsification test one — the traded proxy
 
-Our Baltic history ends 2019-07-31; current assessments are a licensed feed we
-may not redistribute. So: could the free, exchange-traded BDRY stand in?
+Our *licensed* Baltic history ends 2019-07-31, and the Baltic Exchange charges
+for current assessments. So: could the free, exchange-traded BDRY stand in?
+
+(The series is now extended past 2019 from a public mirror of the same Baltic
+indices — see §6 — but that mirror carries no licence, so the question below is
+still the right one to have asked.)
 
 | Series | What it is | Lag-1 autocorrelation | Our skill |
 | :--- | :--- | ---: | ---: |
-| Baltic Capesize | daily broker **survey** | **+0.624** | **+7.5%** |
+| Baltic Capesize | daily broker **survey** | **+0.624** | **+5.6%** |
 | BDRY | liquid, arbitraged **ETF** | **+0.047** | **−11.2%** |
 
 **It cannot, and that is the correct result.** The Baltic index is a survey whose
@@ -248,9 +291,67 @@ alone correlate r = +0.620 and exports alone +0.751, but together **+0.898**. At
 the load end the distinction is starker still: Hay Point and Newcastle record
 *zero* dry-bulk imports.
 
+
 ---
 
-## 6 · Why two modules and not one
+## 6 · Extending the Baltic series past 2019
+
+Our licensed Mendeley copy ends **2019-07-31**. Everything else in the system —
+port calls, weather, market data — runs to the present, so the *label* was the
+only thing stopping the model from forecasting today.
+
+**The source.** East Money, a public financial portal, mirrors the Baltic
+indices through a keyless JSON API. It was validated before use, not after:
+
+| Series | Overlapping days | Byte-identical | Largest disagreement |
+| :--- | ---: | ---: | ---: |
+| Capesize | 1,749 | **99.5%** | 121 points |
+| Panamax | 1,735 | **99.2%** | 46 points |
+| Supramax | 1,731 | 42.9% | 123 points |
+
+Supramax agrees on far fewer days, but the level correlation is **0.9991** and
+the mean gap is 0.5 points on a series around 900 — early-year revision noise,
+not a different index. It converges to 99% by 2019.
+
+`fetch_data.py` therefore validates on **value, not on exact matching**: each
+series must correlate at least 0.99 with the licensed copy and disagree by no
+more than 5% at the 99th percentile, *and* reproduce the licensed value exactly
+on the join day. Gating on the byte-identical rate instead would have left
+Supramax three points above its floor — and since one failing series aborts the
+whole fetch, a bad year of revisions would have silently killed the Capesize
+extension, which is the series the model actually needs.
+
+**The splice only appends.** No licensed value is ever overwritten. The largest
+move within a week of the join is 5.2% against a 3.2% typical daily move, so no
+seam was introduced. `tests/test_leakage.py` §7 asserts all of this.
+
+**The index goes negative.** The Capesize basis is a timecharter equivalent, and
+a TCE can fall below zero when the market collapses — it did for 44 sessions
+between 2020-01-31 and 2020-05-14, bottoming at −372. A log return is undefined
+there, so those days are dropped. It costs 12 rows of 3,296, and every
+alternative target scored worse on the extended series:
+
+| Target | Skill |
+| :--- | ---: |
+| **log(P₊₅/P) — kept** | **+5.5%** |
+| (P₊₅−P)/P simple | −2.3% |
+| log with a +1000 offset | −2.5% |
+| (P₊₅−P)/vol₂₁ standardised | −21.9% |
+
+Dropping rows from the middle leaves gaps in the panel, and the walk-forward
+purges by position. A gap therefore makes the purge span *more* source days,
+never fewer — measured at 5 to 75, so it is conservative at the gaps rather
+than narrower. Asserted in `tests/test_leakage.py` §9.
+
+**Licence.** The Baltic Exchange indices are proprietary and East Money states
+no licence for its mirror. This repository fetches at runtime and redistributes
+nothing — `data/` is gitignored and no index value is committed. A production
+deployment would need a Baltic Exchange licence; the licence restricts
+redistribution, not a licensee's own internal use.
+
+---
+
+## 7 · Why two modules and not one
 
 PortWatch begins 2019-01-01. The Baltic series ends 2019-07-31. **211 days of
 overlap** — nowhere near enough to learn congestion effects on rates.
