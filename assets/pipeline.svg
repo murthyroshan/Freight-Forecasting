@@ -37,7 +37,7 @@
     <text x="44" y="328">Open-Meteo</text>
   </g>
   <g font-size="11" fill="#8a8279">
-    <text x="44" y="104">1,749 rows &#183; to 2019</text>
+    <text x="44" y="104">1,749 rows &#183; licensed, to 2019</text>
     <text x="44" y="170">macro + BDRY</text>
     <text x="44" y="280">11 ports &#183; to last week</text>
     <text x="44" y="346">history + live forecast</text>
@@ -59,7 +59,7 @@
     <text x="284" y="439">ballast.py</text>
   </g>
   <g font-size="11" fill="#8a8279">
-    <text x="284" y="117">1,682 rows &#183; 17 features</text>
+    <text x="284" y="117">3,284 rows &#183; 17 features</text>
     <text x="284" y="211">TPC part-load capacity</text>
     <text x="284" y="305">activity vs own history</text>
     <text x="284" y="381">10-day outlook &#183; 90 km/h halt</text>

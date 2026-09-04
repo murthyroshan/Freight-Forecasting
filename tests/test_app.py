@@ -120,8 +120,13 @@ def _main():
 
     # ---------------------------------------------------------------
     print('\n[3] every forecast the API serves is arithmetically correct')
-    dates = ['2015-07-13', '2016-02-10', '2017-09-15', '2018-06-15',
-             '2019-04-01', '2019-07-24']
+    # Drawn from the artefact, not hard-coded. The scored window moves
+    # whenever the panel is extended - it ran 2015-07 to 2019-07 on the
+    # licensed-only data and 2018-02 to 2026-08 once the Baltic series
+    # was spliced - and a fixed list silently falls outside it.
+    dates = [str(d.date()) for d in
+             oos.index[[0, len(oos) // 5, len(oos) // 2,
+                        3 * len(oos) // 4, len(oos) - 1]]]
     rate, tons = 42.5, 160000.0
     bad = 0
     for ds in dates:
@@ -171,10 +176,17 @@ def _main():
 
     # ---------------------------------------------------------------
     print('\n[5] date handling')
+    # Pick a Saturday inside the scored window rather than naming one.
+    # The window moves when the panel is extended, and a hard-coded date
+    # outside it makes this assert the wrong thing.
+    mid = oos.index[len(oos) // 2]
+    sat = mid + pd.Timedelta(days=(5 - mid.weekday()) % 7)
+    prev = oos.index[oos.index <= sat].max()
     r = requests.post(BASE + '/api/predict', timeout=15, json={
-        'current_rate': 10, 'date': '2017-01-07'}).json()   # a Saturday
-    check('Saturday 2017-01-07 falls back to Friday 2017-01-06',
-          r.get('as_of') == '2017-01-06', r.get('as_of'))
+        'current_rate': 10, 'date': str(sat.date())}).json()
+    check('Saturday %s falls back to the prior trading day %s'
+          % (sat.date(), prev.date()),
+          r.get('as_of') == str(prev.date()), r.get('as_of'))
 
     lo_d, hi_d = str(oos.index.min().date()), str(oos.index.max().date())
     for ds in (lo_d, hi_d):
@@ -389,11 +401,17 @@ def _main():
           == sorted([s.get('reliable', False) for s in cg['snapshots']],
                     reverse=True))
 
-    # The point of this panel is that it is CURRENT, unlike the forecast.
+    # This used to require the port feed to be more than a YEAR ahead of
+    # the forecast window, which was true only because the Baltic series
+    # stopped in 2019. Now that it is spliced to the present the two run
+    # a day apart, and the invariant worth holding is the real one: the
+    # activity panel must never be STALER than the forecast it sits
+    # beside, or it is describing a berth the forecast has moved past.
     newest = max(s['as_of'] for s in cg['snapshots'] if 'as_of' in s)
-    check('port data (%s) is far more recent than the forecast window (%s)'
+    check('port data (%s) is at least as recent as the forecast window (%s)'
           % (newest, str(oos.index.max().date())),
-          pd.Timestamp(newest) > oos.index.max() + pd.Timedelta(days=365))
+          pd.Timestamp(newest) >= oos.index.max() - pd.Timedelta(days=7),
+          'the activity panel has fallen behind the forecast')
 
     prof = cg['monthly_profile']
     check('a 12-month profile exists for every port',
@@ -422,8 +440,18 @@ def _main():
     for hook in ('congCards', 'congChart', 'congPort', 'seasonBody',
                  'loadCongestion', 'drawCongestion', 'ordinal'):
         check('page wires %r' % hook, hook in html)
-    check('panel says plainly that this is the only current data',
-          'only current data' in html)
+    # This used to require the phrase "only current data in the system",
+    # which was true while the Baltic series stopped in 2019. Now that it
+    # is spliced to the present the panel must NOT say that, and what it
+    # must say instead is what its numbers mean.
+    check('the panel no longer claims to be the only current data',
+          'only current data' not in html)
+    # The caveat text is injected at runtime from /api/congestion, so it
+    # is not in the markup at all - assert it where it actually lives.
+    check('and the API still states what the numbers measure',
+          'queue length or berth occupancy'
+          in requests.get(BASE + '/api/congestion', timeout=60)
+          .json().get('caveat', ''))
 
     print('\n[18] concurrent cold requests cost one computation, not N')
     # Without the lock, every browser arriving on a cold cache fires its
@@ -679,8 +707,16 @@ def _main():
     check('warnings arrive worst-first so the panel renders in order',
           order == sorted(order), order)
     mdl = [w for w in rows if w['kind'] == 'model']
-    check('the model item is dated 2019, not today - it is historical',
-          all(w['as_of'].startswith('2019') for w in mdl),
+    # This asserted the year was 2019, because the licensed Baltic copy
+    # ended there. With the series spliced the model reaches the present,
+    # so the invariant is the one that was always meant: the row is dated
+    # by the last date the model actually SCORED, never a later one.
+    last_scored = str(pd.read_parquet(
+        os.path.join(paths.PROCESSED, 'oos_predictions.parquet')
+    ).index.max().date())
+    check('the model item is dated %s - the last date it actually scored'
+          % last_scored,
+          all(w['as_of'] == last_scored for w in mdl),
           [w.get('as_of') for w in mdl])
 
     print('\n[17] the page renders the risk panel')

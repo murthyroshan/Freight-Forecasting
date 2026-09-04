@@ -6,7 +6,7 @@ berth, for coking coal imported to the east coast of India.
 Smart India Hackathon 2026 · Problem statement **SIH26006** · Ministry of Steel
 
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org)
-[![Tests 540](https://img.shields.io/badge/tests-540%20passing-2ea44f)](#testing)
+[![Tests 569](https://img.shields.io/badge/tests-569%20passing-2ea44f)](#testing)
 
 ---
 
@@ -45,7 +45,7 @@ No API keys. Every data source is free and keyless.
 
 ```bash
 python -m src.fetch_data      # 29 parquet files  (~3 min first run)
-python -m src.build_panel     # 1,682 rows × 17 features
+python -m src.build_panel     # 3,284 rows × 17 features
 python -m src.train_model     # walk-forward evaluation
 python -m src.live_model      # the control experiment
 python -m src.optimise        # vessel and berth selection
@@ -60,20 +60,44 @@ eight folds, five-day purge gap between train and test.
 
 | Model | RMSE | Skill vs no-change | Direction |
 | :--- | ---: | ---: | ---: |
-| assume no change | 0.2469 | — | — |
-| momentum | 0.2342 | +5.1% | 62.8% |
-| **ridge** | **0.2285** | **+7.5%** | **64.9%** |
-| LightGBM | 0.2330 | +5.7% | 60.3% |
+| assume no change | 0.2908 | — | — |
+| momentum | 0.2777 | +4.5% | 61.5% |
+| **ridge** | **0.2745** | **+5.6%** | **61.7%** |
+| LightGBM | 0.2810 | +3.4% | 62.5% |
 
-Beats the baseline in **6 of 8** folds. Conformal intervals reach **82.0%**
-coverage against an 80% target — against **78.4%** for the same intervals without
-volatility scaling, on the same folds. Direction is significant at **p = 0.0003**,
-computed on the ~202 *independent* windows rather than the 1,010 overlapping
-rows.
+Beats the baseline in **5 of 8** folds. Conformal intervals reach **81.7%**
+coverage against an 80% target — against **81.0%** for the same intervals without
+volatility scaling, on the same folds. Direction is significant at
+**p = 1.0e-05**, computed on the ~394 *independent* windows rather than the 1,971
+overlapping rows.
 
-> **+7.5% is small, and it is the honest number.** Freight is close to a random
-> walk. Any claim of 80–90% "accuracy" on a return series is measuring the wrong
-> thing or leaking the target.
+> **Read the direction figure, not the skill figure.** Direction accuracy is
+> robust: 61.7% overall, and 61.4–61.6% however you cut the sample. RMSE skill is
+> not — twelve days in early 2020, when the index fell from 207 to about 1, carry
+> most of it, and excluding them takes +5.6% down to **+2.0%**. Both numbers are
+> real; only one of them is stable.
+
+> **Nobody gets 70–80% on a five-day freight return.** A trivial momentum rule
+> scores 78.1% on *next-day* direction and 57.8% at five days — the high figures
+> quoted for freight are a one-day-horizon artefact of a smoothed broker survey.
+> In the one BDI study using a return target, a stated benchmark and DM tests,
+> sign accuracy ran 48–57%.
+
+**Where the edge actually lives.** Sorted by how much the rate really moved:
+
+| Actual 5-day move | Direction | Lift over the best constant guess |
+| :--- | ---: | ---: |
+| smallest quartile (0–6.5%) | 52.3% | −1.6 pp |
+| 2nd quartile (6.5–13.3%) | 58.2% | +4.3 pp |
+| 3rd quartile (13.3–23.5%) | 65.7% | +14.6 pp |
+| **largest quartile (23.5%+)** | **70.4%** | **+17.8 pp** |
+
+On the weeks that move, the model earns its keep. On the quiet ones it adds
+nothing, and says so. The pattern holds in the recent period too, weaker:
+**62.8%** on the largest quartile since 2022, against 50.9% on the smallest.
+
+*Lift is direction accuracy minus the best constant guess on those same rows, so
+it cannot be won by always saying "up".*
 
 **Part-load capacity.** A Capesize loads **152,320 t of a possible 176,500 t**
 for Paradip — 86% utilisation, 24,180 t left ashore every voyage. Given only the
@@ -81,7 +105,7 @@ berth's draft and no deadweight figure, the model implies 155,820 DWT against a
 documented limit of ~155,000.
 
 **Live port activity.** 11 ports from IMF PortWatch, current to **2026-08-28** —
-the only current data in the system, since the Baltic history ends 2019-07-31.
+one day behind the freight forecast, which now also reaches the present.
 
 **Fleet selection.** Voyage counts are whole numbers, so the cheapest mix is an
 integer problem, not a division: `src/optimise.py` solves it by branch-and-bound
@@ -126,7 +150,7 @@ yours.
 | `src/risk.py` | **Module B** — risk warnings, measured and otherwise. |
 | `src/optimise.py` | **Module B** — which ships into which berths (MILP). |
 | `src/ballast.py` | **Module B** — the empty return leg. |
-| `tests/` | 540 checks. See [Testing](#testing). |
+| `tests/` | 569 checks. See [Testing](#testing). |
 
 ## ⚖️ The rule this repository runs on
 
@@ -153,14 +177,14 @@ the *calmest* months of the year. Both experiments are written up in
 ## 🧪 Testing
 
 ```bash
-python -m tests.test_leakage       #   8 · features cannot see the future
-python -m tests.test_walkforward   #  71 · the purge gap and the headline claims
+python -m tests.test_leakage       #  31 · features, the splice, and the target
+python -m tests.test_walkforward   #  76 · the purge gap and the headline claims
 python -m tests.test_ports         #  54 · part-load physics
 python -m tests.test_congestion    #  59 · activity signal and its guards
 python -m tests.test_risk          #  86 · thresholds, and evidence claims
 python -m tests.test_optimise      #  62 · selection, against brute force
 python -m tests.test_ballast       #  43 · the empty leg, and its limits
-python -m tests.test_app           # 157 · every API claim, recomputed
+python -m tests.test_app           # 158 · every API claim, recomputed
 ```
 
 `test_walkforward.py` exists because a mutation test found that inverting the
@@ -190,12 +214,15 @@ behind it is ever flagged as measured.
 | Source | Contents | Coverage |
 | :--- | :--- | :--- |
 | Mendeley `10.17632/t76ckh2ygg` *(CC BY 4.0)* | Baltic Capesize, Panamax, Supramax, Handysize | 1,749 rows, 2012-08-01 → 2019-07-31 |
+| East Money *(public mirror, no stated licence)* | extends the Baltic series past our licensed copy | 1,750 rows, 2019-08-01 → current |
 | IMF PortWatch | daily port calls and dry bulk tonnage, 11 ports | 2,797 rows each, → 2026-08-28 |
 | Yahoo Finance | BDRY, Brent, copper, DXY, S&P 500, USD/INR, owners, miners | 2012 → current |
 | Open-Meteo | rainfall, wind, gusts at all five discharge ports | 5,358 rows each, plus a live 10-day forecast |
 
 Baltic index history is redistributed under **CC BY 4.0**. Baltic Exchange
 indices themselves are proprietary and are **not** redistributed here.
+The post-2019 extension is fetched at runtime from a public mirror and never
+committed; production would need a Baltic Exchange licence.
 
 Full methodology, the port physics and both falsification tests:
 **[`docs/METHOD.md`](docs/METHOD.md)**

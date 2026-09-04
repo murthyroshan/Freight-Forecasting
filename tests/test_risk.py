@@ -151,8 +151,18 @@ def main():
     mu = risk.model_uncertainty()
     check('model uncertainty exists and is dated', mu and 'as_of' in mu)
     if mu:
-        check('its as_of is the last SCORED date, in 2019, not today',
-              pd.Timestamp(mu['as_of']).year == 2019, mu['as_of'])
+        # This used to assert the year was 2019, because the licensed
+        # Baltic copy ended there and the model could not speak about
+        # any later date. With the series spliced it reaches the present,
+        # so the invariant is no longer "2019" - it is "the last date the
+        # model actually scored", which is the thing that was ever
+        # really being checked.
+        oos_path = os.path.join(paths.PROCESSED, 'oos_predictions.parquet')
+        last_scored = pd.read_parquet(oos_path).index.max()
+        check('its as_of is the last SCORED date (%s), never a date the '
+              'model did not evaluate' % str(pd.Timestamp(last_scored).date()),
+              pd.Timestamp(mu['as_of']) == pd.Timestamp(last_scored),
+              (mu['as_of'], str(last_scored)))
         check('it says a wide band means uncertainty, not a rate move',
               'not that rates will move' in mu['detail'], mu['detail'][:80])
     dated = [w for w in rows if w['kind'] == 'berth' and 'as_of' in w]

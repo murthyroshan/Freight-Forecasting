@@ -162,8 +162,8 @@ def walk_forward(df, feats, conformal='local'):
         ridge_cal = rg.predict(sc.transform(Xcal)) if len(Xcal) else None
 
         # --- lightgbm ----------------------------------------------
-        # Deliberately tiny. There are ~336 independent windows here,
-        # not 1682 rows; a normal-sized GBM memorises this instantly.
+        # Deliberately tiny. There are ~656 independent windows here,
+        # not 3,284 rows; a normal-sized GBM memorises this instantly.
         gb = lgb.LGBMRegressor(
             n_estimators=300, learning_rate=0.02, num_leaves=4,
             max_depth=3, min_child_samples=40, subsample=0.7,
@@ -175,7 +175,7 @@ def walk_forward(df, feats, conformal='local'):
         best_cal = ridge_cal if CONF_ON == 'ridge' else gb.predict(Xcal)
 
         # --- locally adaptive split conformal -----------------------
-        # Plain split conformal on this model gives 78.4% coverage for a
+        # Plain split conformal on this model gives 81.0% coverage for a
         # nominal 80% (computed below, not asserted here). Freight vol
         # clusters hard, so one global residual
         # quantile is too narrow in stressed regimes and too wide in calm

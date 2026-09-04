@@ -167,6 +167,37 @@ def main():
     check('scored-row count matches', len(o) == m['n_scored'],
           (len(o), m['n_scored']))
 
+    print('\n[8] the edge is concentrated in the moves that matter')
+    # The README and METHOD.md publish this table. It came from a
+    # research script the first time and three of its four rows were
+    # wrong against the production model, so it is asserted here now.
+    mag = o['y'].abs()
+    band = []
+    for lo_q, hi_q in ((0.0, 0.25), (0.25, 0.50), (0.50, 0.75), (0.75, 1.0)):
+        a, b = mag.quantile(lo_q), mag.quantile(hi_q)
+        q = (mag >= a) & (mag <= b)
+        d = float((np.sign(o['ridge'][q]) == np.sign(o['y'][q])).mean())
+        up = float((o['y'][q] > 0).mean())
+        band.append((d * 100, (d - max(up, 1 - up)) * 100, int(q.sum())))
+    for i, (d, lift, n) in enumerate(band):
+        print('       quartile %d: n=%d  direction %.1f%%  lift %+.1fpp'
+              % (i + 1, n, d, lift))
+    check('direction rises monotonically with the size of the move: %s'
+          % ' '.join('%.1f' % b[0] for b in band),
+          all(band[i][0] <= band[i + 1][0] + 0.5 for i in range(3)),
+          [b[0] for b in band])
+    check('the largest quartile beats the smallest by at least 10 points '
+          '(%.1f vs %.1f)' % (band[3][0], band[0][0]),
+          band[3][0] - band[0][0] >= 10, (band[3][0], band[0][0]))
+    check('the smallest quartile adds nothing, and the docs say so '
+          '(%.1f%%, lift %+.1fpp)' % (band[0][0], band[0][1]),
+          band[0][1] < 2.0, band[0][1])
+    check('the largest quartile lift is real, not a constant-guess artefact '
+          '(%+.1fpp)' % band[3][1], band[3][1] > 10, band[3][1])
+    check('every quartile holds a quarter of the scored rows',
+          all(abs(b[2] - len(o) / 4) <= 2 for b in band),
+          [b[2] for b in band])
+
     print('\n' + '=' * 62)
     if FAIL:
         print('  %d FAILED:' % len(FAIL))

@@ -24,7 +24,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
-from src import paths  # noqa: E402
+from src import paths, train_model  # noqa: E402
 
 import numpy as np
 import pandas as pd
@@ -63,7 +63,16 @@ def main():
     print('\n[3] target is strictly in the future')
     # y at t must equal the log change from t to t+HORIZON, recomputed
     # here independently of build_panel.
-    cape = df['capesize_level']
+    # Recomputed on the SOURCE series, not on the panel.
+    #
+    # The panel is dropna'd, and since the Capesize index went negative
+    # in early 2020 - it is a timecharter equivalent, and a TCE can fall
+    # below zero - that now removes rows from the MIDDLE. shift(-5) on
+    # the gapped panel index would step over the hole and compare a
+    # different pair of days. Stepping on the source index is what the
+    # target actually means.
+    bal = build_panel.baltic()
+    cape = bal['capesize'].where(bal['capesize'] > 0)
     manual = np.log(cape.shift(-build_panel.HORIZON) / cape)
     aligned = manual.dropna()
     common = aligned.index.intersection(df.index)
@@ -143,6 +152,144 @@ def main():
     check('poison did perturb %d/%d features after the cut'
           % (moved, len(feats)), moved > 0,
           'test 5 passed vacuously - the poison had no effect')
+
+    print('\n[7] the Baltic splice appends, and never rewrites history')
+    # The licensed Mendeley copy runs to 2019-07-31; past it the series
+    # continues from a public mirror. Two things must hold or the target
+    # has a seam in the middle of it: the licensed half must come
+    # through untouched, and the join must not introduce a jump.
+    lic = pd.read_parquet(os.path.join(paths.RAW, 'baltic_indices.parquet'))
+    lic['date'] = pd.to_datetime(lic['date'])
+    lic = lic.set_index('date').sort_index()
+    cut = lic.index.max()
+    bal = build_panel.baltic()
+
+    for col in ('capesize', 'panamax', 'supramax'):
+        same = (bal[col].reindex(lic.index) == lic[col]) | lic[col].isna()
+        check('%s: all %d licensed days come through the splice unchanged'
+              % (col, len(lic)), bool(same.all()),
+              [str(d.date()) for d in lic.index[~same]][:3])
+
+    check('no date appears twice', not bal.index.duplicated().any(),
+          [str(d.date()) for d in bal.index[bal.index.duplicated()]][:3])
+    check('the series is in date order',
+          bool(bal.index.is_monotonic_increasing))
+    check('the licensed half is not extended backwards',
+          bal.index.min() == lic.index.min(),
+          (str(bal.index.min().date()), str(lic.index.min().date())))
+
+    ext_path = os.path.join(paths.RAW, 'baltic_extension.parquet')
+    if os.path.exists(ext_path):
+        ext = pd.read_parquet(ext_path)
+        ext['date'] = pd.to_datetime(ext['date'])
+        check('every appended row is strictly AFTER the licensed copy ends '
+              '(%s)' % str(cut.date()), bool((ext['date'] > cut).all()),
+              [str(d.date()) for d in ext['date'][ext['date'] <= cut]][:3])
+        check('the splice reaches past the licensed copy (%d rows added)'
+              % len(ext), bal.index.max() > cut,
+              (str(bal.index.max().date()), str(cut.date())))
+
+        # A seam would show up as an outsized move at the join. Compare
+        # the join week against the series' own typical daily move.
+        moves = bal['capesize'].pct_change().abs()
+        near = moves[(moves.index > cut - pd.Timedelta(days=7))
+                     & (moves.index < cut + pd.Timedelta(days=7))]
+        typical = float(moves.median())
+        check('the join is smooth: largest move within a week of it is '
+              '%.1f%%, against a %.1f%% typical daily move'
+              % (float(near.max()) * 100, typical * 100),
+              float(near.max()) < typical * 6,
+              (float(near.max()), typical))
+
+    print('\n[8] the target survives the days the index went negative')
+    # The Capesize basis is a timecharter equivalent and went below zero
+    # for 44 sessions in early 2020. A log return is undefined there.
+    lvl = df['capesize_level']
+    check('no non-positive level survives into the panel',
+          bool((lvl > 0).all()), float(lvl.min()))
+    check('and no target value is non-finite',
+          bool(np.isfinite(df['y']).all()),
+          int((~np.isfinite(df['y'])).sum()))
+    src = build_panel.baltic()['capesize']
+    n_bad = int((src <= 0).sum())
+    check('the source really does contain %d non-positive days, so the '
+          'guard is doing something' % n_bad, n_bad > 0, n_bad)
+
+    print('\n[9] dropping those rows did not narrow the purge gap')
+    # The panel is dropna'd, so removing rows from the MIDDLE leaves
+    # gaps. train_model purges by POSITION, so a gap makes the purge
+    # span more source days, never fewer - conservative, not leaky.
+    loc = {t: i for i, t in enumerate(src.index)}
+    spans = [loc[df.index[i + train_model.HORIZON]] - loc[df.index[i]]
+             for i in range(len(df) - train_model.HORIZON)]
+    check('a %d-row purge never spans fewer than %d source days '
+          '(min %d, max %d)'
+          % (train_model.HORIZON, train_model.HORIZON, min(spans),
+             max(spans)),
+          min(spans) >= train_model.HORIZON, min(spans))
+
+    print('\n[10] the mirror is validated, not trusted')
+    # fetch_data refuses to write the extension unless the mirror
+    # reproduces the licensed copy. Exercised by feeding it deliberately
+    # wrong series - if any of these were accepted, a corrupted or
+    # rebased feed would be spliced into the middle of the target.
+    import shutil
+    from src import fetch_data
+
+    ext_path = os.path.join(paths.RAW, 'baltic_extension.parquet')
+    backup = ext_path + '.testbak'
+    real_fetch = fetch_data._eastmoney
+    had = os.path.exists(ext_path)
+    if had:
+        shutil.copy2(ext_path, backup)
+
+    def corrupted(kind):
+        def f(indicator, timeout=45):
+            d = real_fetch(indicator, timeout).copy()
+            if kind == 'shuffled':
+                d['value'] = d['value'].sample(frac=1,
+                                               random_state=0).values
+            elif kind == 'scaled':
+                d['value'] = d['value'] * 1.5
+            elif kind == 'drifted':
+                d['value'] = d['value'] + np.linspace(0, 400, len(d))
+            elif kind == 'joinbroken':
+                cut = pd.to_datetime(
+                    pd.read_parquet(os.path.join(
+                        paths.RAW, 'baltic_indices.parquet'))['date']).max()
+                d.loc[d['date'] == cut, 'value'] += 1.0
+            return d
+        return f
+
+    try:
+        for kind, why in (('shuffled', 'a series with the right values in '
+                                       'the wrong order'),
+                          ('scaled', 'a series on a different scale'),
+                          ('drifted', 'a series that drifts away'),
+                          ('joinbroken', 'a series that disagrees on the '
+                                         'join day')):
+            if os.path.exists(ext_path):
+                os.remove(ext_path)
+            fetch_data._eastmoney = corrupted(kind)
+            try:
+                fetch_data.fetch_baltic_extension()
+            except Exception:
+                pass
+            check('%s is refused' % why, not os.path.exists(ext_path),
+                  'the fetcher wrote an extension it should have rejected')
+    finally:
+        fetch_data._eastmoney = real_fetch
+        if os.path.exists(ext_path):
+            os.remove(ext_path)
+        if had:
+            shutil.move(backup, ext_path)
+
+    check('and the real extension is back in place after the test',
+          os.path.exists(ext_path) == had)
+    check('the validation gates on VALUE, not on exact matching',
+          hasattr(fetch_data, 'MIN_CORRELATION')
+          and hasattr(fetch_data, 'MAX_P99_REL_GAP')
+          and not hasattr(fetch_data, 'MIN_AGREEMENT'))
 
     print('\n' + '=' * 60)
     if FAILURES:
