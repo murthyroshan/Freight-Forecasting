@@ -99,6 +99,119 @@
                 <canvas id="forecastChart" height="200"></canvas>
             </div>
 
+            <!-- Module B: live port activity -->
+            <div class="card full-width">
+                <h2>📡 Port activity, both ends of the lane &mdash;
+                    <span id="congAsOf" style="color:#22c55e"></span></h2>
+                <p style="color:#94a3b8;font-size:0.85em;margin-top:-6px">
+                  Vessel arrivals from IMF PortWatch, derived from AIS.
+                  <b>This is the only current data in the system</b> &mdash; the
+                  Baltic index history ends 31/07/2019, this runs to last week.
+                  Each port is scored against <i>its own</i> history, because
+                  New Orleans handles twenty times Gopalpur's traffic.
+                  <b>The Indian berths are where the decision is</b> &mdash;
+                  SAIL picks the discharge port. The load terminals below
+                  usually come with the coal supply contract, so they are
+                  watched for delay risk rather than chosen.
+                </p>
+
+                <h3 id="dischargeHead" style="color:#94a3b8;font-size:0.85em;
+                    margin:16px 0 0;text-transform:uppercase;
+                    letter-spacing:.06em">Discharge &mdash; east coast India</h3>
+                <div style="display:grid;
+                            grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+                            gap:12px;margin:10px 0 4px">
+                  <div id="congCards" style="display:contents"></div>
+                </div>
+
+                <h3 id="loadHead" style="color:#94a3b8;font-size:0.85em;
+                    margin:16px 0 0;text-transform:uppercase;
+                    letter-spacing:.06em">Load &mdash; Australia, US
+                    <span style="text-transform:none;font-weight:400">
+                    (watched for risk; the supply contract picks the
+                    terminal)</span></h3>
+                <div style="display:grid;
+                            grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+                            gap:12px;margin:10px 0 4px">
+                  <div id="congLoadCards" style="display:contents"></div>
+                </div>
+
+                <div style="display:flex;gap:14px;align-items:center;
+                            flex-wrap:wrap;margin-bottom:8px">
+                  <label style="margin:0">Chart port</label>
+                  <select id="congPort" style="width:auto;min-width:180px"></select>
+                </div>
+                <canvas id="congChart" height="110"></canvas>
+
+                <h2 style="margin-top:22px">Seasonal pattern &mdash; arrivals by
+                  month</h2>
+                <p style="color:#94a3b8;font-size:0.85em;margin-top:-6px">
+                  100 = that port's own annual average, over 2019&ndash;2026.
+                </p>
+                <div style="overflow-x:auto">
+                  <table>
+                    <thead><tr id="seasonHead"></tr></thead>
+                    <tbody id="seasonBody"></tbody>
+                  </table>
+                </div>
+                <p id="congCaveat" style="color:#fdba74;font-size:0.8em;
+                   margin-top:10px"></p>
+            </div>
+
+            <!-- Module B: vessel and port selection -->
+            <div class="card full-width">
+                <h2>🚢 Vessel &amp; port selection &mdash; part-load capacity</h2>
+                <p style="color:#94a3b8;font-size:0.85em;margin-top:-6px">
+                  A laden Capesize draws 18.2 m. Paradip's coal berth permits
+                  16.0 m. It does not follow that Capesizes cannot call Paradip
+                  &mdash; they arrive <b>part-laden</b>. How much cargo you can
+                  actually load is set by <b>TPC</b>, tonnes per centimetre of
+                  immersion, and that is the number this decides on.
+                </p>
+
+                <div style="display:flex;gap:20px;align-items:flex-end;
+                            flex-wrap:wrap;margin:14px 0 4px">
+                  <div style="flex:0 0 200px">
+                    <label>Parcel size (tonnes)</label>
+                    <input type="number" id="parcel_t" value="160000"
+                           step="1000" min="1">
+                  </div>
+                  <div id="portBest" style="flex:1;min-width:280px"></div>
+                </div>
+
+                <table>
+                  <thead><tr>
+                    <th>Vessel</th><th>Discharge port</th><th>Verdict</th>
+                    <th style="text-align:right">Voyages</th>
+                    <th style="text-align:right">Cargo / voyage</th>
+                    <th style="text-align:right">Fill</th>
+                    <th style="text-align:right">Left on table</th>
+                  </tr></thead>
+                  <tbody id="portOptBody">
+                    <tr><td colspan="7"><i>loading&hellip;</i></td></tr>
+                  </tbody>
+                </table>
+                <p style="color:#94a3b8;font-size:0.8em;margin-top:8px">
+                  <b>Fill</b> is how much of the capacity you charter this
+                  parcel actually uses &mdash; not how full each ship could be.
+                  Ranking on the latter calls a Capesize and a Newcastlemax
+                  equally good and quietly recommends the more expensive one.
+                </p>
+
+                <h2 style="margin-top:22px">Max cargo by class and berth
+                  (tonnes)</h2>
+                <div style="overflow-x:auto">
+                  <table id="portMatrix">
+                    <thead><tr id="portMatrixHead"></tr></thead>
+                    <tbody id="portMatrixBody">
+                      <tr><td><i>loading&hellip;</i></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p id="portCaveat" style="color:#fdba74;font-size:0.8em;
+                   margin-top:10px"></p>
+            </div>
+
             <!-- Real walk-forward results -->
             <div class="card full-width">
                 <h2>📊 Walk-forward validation &mdash; every fold</h2>
@@ -181,7 +294,20 @@
         // backend so the chart always reflects real computed values.
         initChart([], null, []);
 
-        const pct = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+        // The API sends null rather than NaN for anything non-finite,
+        // because bare NaN is invalid JSON and JSON.parse would throw.
+        // Render it as an em-dash instead of "null%".
+        const pct = v => (v === null || v === undefined || !isFinite(v))
+            ? '—'
+            : (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+        // Named 'fin', not 'num': predict() has its own local num(id)
+        // that reads a form field, and a same-named global is shadowed
+        // inside it. Sharing the name turned a call like num(r.lo_pct)
+        // into getElementById(0.9).value, which throws part-way through
+        // rendering - the chart drew and the recommendation silently
+        // did not.
+        const fin = v => (v === null || v === undefined || !isFinite(v))
+            ? null : v;
 
         // The API speaks ISO (sortable, unambiguous, correct on the wire).
         // Everything a person reads is DD/MM/YYYY.
@@ -270,8 +396,322 @@
             }
         }
 
+        const VERDICT_COLOUR = {
+            'alongside':    '#22c55e',
+            'lighterage':   '#38bdf8',
+            'uneconomic':   '#f59e0b',
+            'cannot serve': '#ef4444',
+        };
+        const tons = n => (n === null || n === undefined)
+            ? '—' : Math.round(n).toLocaleString();
+
+        // Static reference: physics and published berth limits, so this
+        // is fetched once and never depends on the parcel.
+        async function loadPortMatrix() {
+            try {
+                const resp = await fetch('/api/ports');
+                if (!resp.ok) throw new Error('ports');
+                const d = await resp.json();
+
+                document.getElementById('portMatrixHead').innerHTML =
+                    '<th>Class</th><th style="text-align:right">TPC t/cm</th>'
+                    + d.ports.map(p => `<th style="text-align:right"
+                        title="${p.note.replace(/"/g, '&quot;')}">${p.name}
+                        ${p.max_draft_m === null ? '' :
+                          `<br><span style="font-weight:400;color:#64748b">
+                           ${p.max_draft_m.toFixed(1)} m</span>`}</th>`).join('');
+
+                const tpcOf = {};
+                d.vessels.forEach(v => { tpcOf[v.name] = v.tpc; });
+
+                document.getElementById('portMatrixBody').innerHTML =
+                    d.matrix.map(row => `<tr>
+                      <td><b>${row.vessel}</b></td>
+                      <td style="text-align:right;color:#94a3b8">
+                        ${tpcOf[row.vessel]}</td>
+                      ${row.cells.map(c => {
+                        const col = VERDICT_COLOUR[c.verdict] || '#e2e8f0';
+                        const body = c.verdict === 'cannot serve'
+                          ? 'cannot'
+                          : tons(c.max_cargo_t);
+                        return `<td style="text-align:right;color:${col}"
+                                 title="${c.binding.replace(/"/g,'&quot;')}">
+                                 ${body}</td>`;
+                      }).join('')}
+                    </tr>`).join('');
+
+                const unverified = d.ports.filter(p => !p.geometry_verified)
+                                          .map(p => p.name);
+                document.getElementById('portCaveat').innerHTML =
+                    'Colour key: <span style="color:#22c55e">alongside</span> · '
+                    + '<span style="color:#38bdf8">lighterage</span> · '
+                    + '<span style="color:#f59e0b">uneconomic '
+                    + `(&lt;${Math.round(d.min_utilisation * 100)}% full)</span> · `
+                    + '<span style="color:#ef4444">cannot berth</span>. '
+                    + 'Hover any figure for the binding constraint.<br>'
+                    + '<b>Upper bounds:</b> LOA, beam and channel limits are '
+                    + 'not verified for ' + unverified.join(', ') + ', so a '
+                    + 'large class may show a draft-limited tonnage it could '
+                    + 'not physically reach. Only Paradip and Sagar-Sandheads '
+                    + 'have verified geometry.';
+            } catch (e) {
+                document.getElementById('portCaveat').textContent =
+                    'Port reference unavailable.';
+            }
+        }
+
+        async function portOptions() {
+            const best = document.getElementById('portBest');
+            const body = document.getElementById('portOptBody');
+            const raw = document.getElementById('parcel_t').value.trim();
+            const parcel = raw === '' ? null : Number(raw);
+            if (parcel === null || !isFinite(parcel) || parcel <= 0) {
+                best.innerHTML = '<span style="color:#fdba74">Enter a parcel '
+                    + 'size greater than zero.</span>';
+                body.innerHTML = '<tr><td colspan="7">—</td></tr>';
+                return;
+            }
+            let d;
+            try {
+                const resp = await fetch('/api/ports/options', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ parcel_t: parcel })
+                });
+                d = await resp.json();
+                if (!resp.ok) {
+                    best.innerHTML = `<span style="color:#fdba74">${
+                        d.error || resp.status}</span>`;
+                    body.innerHTML = '<tr><td colspan="7">—</td></tr>';
+                    return;
+                }
+            } catch (e) {
+                best.innerHTML = '<span style="color:#fdba74">Backend '
+                    + 'unreachable.</span>';
+                return;
+            }
+
+            const b = d.best;
+            best.innerHTML = b ? `
+              <div style="background:#064e3b;border:1px solid #059669;
+                          border-radius:8px;padding:12px 14px;color:#6ee7b7">
+                <div style="font-size:1.05em"><b>${b.vessel}</b> into
+                  <b>${b.port}</b> &mdash; ${b.voyages} voyage${
+                    b.voyages > 1 ? 's' : ''} of ${tons(b.max_cargo_t)} t</div>
+                <div style="font-size:.85em;opacity:.9;margin-top:4px">
+                  Fills ${(b.parcel_utilisation * 100).toFixed(0)}% of the
+                  capacity chartered${b.foregone_t > 0
+                    ? `, and draft limits cost ${tons(b.foregone_t)} t of
+                       payload per voyage` : ''}.
+                  <br>Binding: ${b.binding}
+                </div>
+              </div>` : '<span style="color:#fdba74">No workable option.</span>';
+
+            body.innerHTML = d.options.slice(0, 12).map(o => {
+                const col = VERDICT_COLOUR[o.verdict] || '#e2e8f0';
+                return `<tr>
+                  <td>${o.vessel}</td>
+                  <td>${o.port}</td>
+                  <td style="color:${col}">${o.verdict}${
+                    o.caveats.length ? ' <span title="' +
+                    o.caveats[0].replace(/"/g,'&quot;') +
+                    '" style="color:#fdba74">*</span>' : ''}</td>
+                  <td style="text-align:right">${o.voyages}</td>
+                  <td style="text-align:right">${tons(o.max_cargo_t)}</td>
+                  <td style="text-align:right"><b>${
+                    (o.parcel_utilisation * 100).toFixed(0)}%</b></td>
+                  <td style="text-align:right;color:#94a3b8">${
+                    o.foregone_t > 0 ? tons(o.foregone_t) : '—'}</td>
+                </tr>`; }).join('');
+        }
+
+        const BAND_COLOUR = {
+            'quiet':      '#38bdf8',
+            'normal':     '#22c55e',
+            'busy':       '#f59e0b',
+            'very busy':  '#ef4444',
+            'unreliable': '#64748b',
+        };
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun',
+                        'Jul','Aug','Sep','Oct','Nov','Dec'];
+        // 1st/2nd/3rd/4th, and 11-13 are always "th" - otherwise the
+        // 53rd percentile renders as "53th".
+        const ordinal = n => {
+            n = Math.round(n);
+            const t = n % 100;
+            if (t >= 11 && t <= 13) return n + 'th';
+            return n + ({1:'st', 2:'nd', 3:'rd'}[n % 10] || 'th');
+        };
+        let congChart = null;
+
+        async function loadCongestion() {
+            let d;
+            try {
+                const resp = await fetch('/api/congestion');
+                if (!resp.ok) throw new Error('congestion');
+                d = await resp.json();
+            } catch (e) {
+                document.getElementById('congCaveat').textContent =
+                    'Port activity unavailable. Run: python -m src.fetch_data';
+                return;
+            }
+
+            const live = d.snapshots.filter(s => !s.error);
+            const dated = live.find(s => s.as_of);
+            document.getElementById('congAsOf').textContent =
+                dated ? 'week to ' + fmtDate(dated.as_of) : '';
+
+            const card = s => {
+                const col = BAND_COLOUR[s.band] || '#94a3b8';
+                // Two figures. Throughput is everything crossing the
+                // berth in both directions and is what makes it busy;
+                // the lane figure is only our own cargo's direction.
+                // Paradip ships 60% of its dry bulk out as iron ore, so
+                // the inbound number alone understates the competition.
+                const ktAll = (s.throughput_t_per_day / 1000).toFixed(0);
+                const ktLane = (s.lane_t_per_day / 1000).toFixed(0);
+                return `<div style="background:#0f172a;border:1px solid ${col};
+                             border-radius:8px;padding:11px 12px">
+                  <div style="font-size:.78em;color:#94a3b8">${s.label}</div>
+                  <div style="font-size:1.35em;font-weight:700;color:${col}">
+                       ${s.calls_per_day.toFixed(2)}</div>
+                  <div style="font-size:.72em;color:#94a3b8">
+                       calls/day vs ${s.baseline_calls_per_day.toFixed(2)}
+                       normal</div>
+                  <div style="font-size:.72em;color:#64748b"
+                       title="Total across the berth, both directions. Only
+                              ${ktLane} kt/day is ${s.flow} - the rest is
+                              cargo moving the other way, competing for the
+                              same quays.">
+                       ${ktAll} kt/day total &middot;
+                       ${ktLane} ${s.flow}</div>
+                  <div style="font-size:.8em;color:${col};margin-top:4px;
+                       text-transform:capitalize">${s.band}${
+                       s.reliable ? ` · ${ordinal(s.percentile)} pctl` : ''}
+                  </div>
+                </div>`; };
+
+            const disch = live.filter(s => s.role === 'discharge');
+            const loads = live.filter(s => s.role === 'load');
+            document.getElementById('congCards').innerHTML =
+                disch.map(card).join('');
+            document.getElementById('congLoadCards').innerHTML =
+                loads.map(card).join('');
+
+            const sel = document.getElementById('congPort');
+            if (!sel.options.length) {
+                const optgroup = (title, rows) =>
+                    `<optgroup label="${title}">` + rows.map(s =>
+                        `<option value="${s.port}">${s.label}</option>`
+                    ).join('') + '</optgroup>';
+                sel.innerHTML = optgroup('Discharge', disch)
+                              + optgroup('Load', loads);
+                sel.addEventListener('change', () => drawCongestion(sel.value));
+            }
+
+            // seasonal table
+            document.getElementById('seasonHead').innerHTML =
+                '<th>Port</th>' + MONTHS.map(m =>
+                    `<th style="text-align:right">${m}</th>`).join('');
+            document.getElementById('seasonBody').innerHTML =
+                Object.entries(d.monthly_profile).map(([port, prof]) => {
+                    if (!prof) return '';
+                    const cells = MONTHS.map((_, i) => {
+                        const v = prof[String(i + 1)] ?? prof[i + 1];
+                        if (v === undefined || v === null)
+                            return '<td style="text-align:right">—</td>';
+                        // Shade away from 100 so the pattern is readable.
+                        const col = v >= 115 ? '#ef4444' : v >= 105 ? '#f59e0b'
+                                  : v <= 90 ? '#38bdf8' : '#94a3b8';
+                        return `<td style="text-align:right;color:${col}">
+                                ${v.toFixed(0)}</td>`;
+                    }).join('');
+                    const nice = port.split('_')
+                        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+                        .join(' ');
+                    return `<tr><td>${nice}</td>${cells}</tr>`;
+                }).join('');
+
+            const unrel = live.filter(s => !s.reliable);
+            document.getElementById('congCaveat').innerHTML =
+                `<b>What this measures:</b> ${d.caveat}`
+                + (unrel.length ? '<br><b>Not scored:</b> '
+                    + unrel.map(s => `${s.port} — ${s.reliability_note}`)
+                           .join('; ') : '')
+                + '<br><b>Seasonality:</b> every INDIAN port dips September '
+                + 'to December, which overlaps Bay of Bengal cyclone season. '
+                + 'PortWatch reports arrivals, not causes, so treat that as '
+                + 'an association to plan around rather than a proven '
+                + 'weather effect.';
+
+            // live is empty on a fresh clone, before fetch_data has run.
+            // live[0].port would throw and take the whole panel with it.
+            if (live.length) {
+                drawCongestion(sel.value || live[0].port);
+            } else {
+                document.getElementById('congCaveat').innerHTML =
+                    '<b>No port data yet.</b> Run: '
+                    + '<code>python -m src.fetch_data</code>';
+            }
+        }
+
+        async function drawCongestion(port) {
+            let d;
+            try {
+                const resp = await fetch(`/api/congestion/${port}?days=365`);
+                if (!resp.ok) return;
+                d = await resp.json();
+            } catch (e) { return; }
+
+            const s = d.series;
+            if (congChart) congChart.destroy();
+            congChart = new Chart(document.getElementById('congChart'), {
+                type: 'line',
+                data: {
+                    labels: s.map(r => fmtDate(r.date)),
+                    datasets: [
+                        { label: 'daily arrivals',
+                          data: s.map(r => r.calls),
+                          borderColor: 'rgba(148,163,184,.35)',
+                          borderWidth: 1, pointRadius: 0, tension: 0 },
+                        { label: '7-day average',
+                          data: s.map(r => r.smoothed),
+                          borderColor: '#38bdf8', borderWidth: 2.5,
+                          pointRadius: 0, tension: .25 },
+                        { label: 'normal for this port',
+                          data: s.map(() => d.snapshot
+                                       .baseline_calls_per_day),
+                          borderColor: '#22c55e', borderWidth: 1.5,
+                          borderDash: [6, 4], pointRadius: 0 }
+                    ]
+                },
+                options: {
+                    responsive: true, animation: false,
+                    interaction: { intersect: false, mode: 'index' },
+                    plugins: { legend: { labels: { color: '#94a3b8' } } },
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', maxTicksLimit: 10 },
+                             grid: { color: '#1e293b' } },
+                        y: { beginAtZero: true,
+                             title: { display: true, text: 'dry bulk calls/day',
+                                      color: '#94a3b8' },
+                             ticks: { color: '#94a3b8' },
+                             grid: { color: '#334155' } }
+                    }
+                }
+            });
+        }
+
         window.addEventListener('DOMContentLoaded', async () => {
             await loadMetrics();
+            loadCongestion();
+            loadPortMatrix();
+            const pt = document.getElementById('parcel_t');
+            if (pt) {
+                pt.addEventListener('change', portOptions);
+                pt.addEventListener('input', portOptions);
+            }
+            portOptions();
             ['current_rate', 'volume', 'date'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) {
@@ -360,15 +800,18 @@
                     ${r.capesize_index.toLocaleString()}.<br>
                     Forecast over ${r.horizon_days} trading days:
                     <strong>${pct(r.expected_move_pct)}</strong>
-                    &nbsp;(${r.interval_pct}% interval
-                    ${pct(r.lo_pct)} to ${pct(r.hi_pct)})<br>
+                    &nbsp;${(fin(r.lo_pct) === null || fin(r.hi_pct) === null)
+                        ? '(no calibrated interval for this fold)'
+                        : `(${r.interval_pct}% interval ${pct(r.lo_pct)} to `
+                          + `${pct(r.hi_pct)})`}<br>
                     $${r.current_rate}/ton &rarr;
                     <strong>$${r.projected_rate}/ton</strong>
                     &mdash; ${r.direction === 'up'
                         ? 'rates rising, fix now'
                         : 'rates easing, hold and re-approach'}.<br>
                     Move at risk on this parcel:
-                    <strong>$${r.exposure.toLocaleString()}</strong>
+                    <strong>${fin(r.exposure) === null ? '—'
+                        : '$' + r.exposure.toLocaleString()}</strong>
                 </div>${truth}`;
         }
 
@@ -380,13 +823,18 @@
             chart = new Chart(document.getElementById('forecastChart'), {
                 type: 'line',
                 data: { labels: labels, datasets: [
+                    // A null bound means no calibration data for that
+                    // fold. Plot nothing rather than a band at zero,
+                    // which would read as a confident tight interval.
                     { label: 'Upper ' + r.interval_pct + '%',
-                      data: [c, +(c * (1 + r.hi_pct / 100)).toFixed(2)],
+                      data: fin(r.hi_pct) === null ? []
+                            : [c, +(c * (1 + r.hi_pct / 100)).toFixed(2)],
                       borderColor: 'rgba(56,189,248,.35)',
                       backgroundColor: 'rgba(56,189,248,.12)',
                       fill: '+1', pointRadius: 0, borderDash: [4, 4] },
                     { label: 'Lower ' + r.interval_pct + '%',
-                      data: [c, +(c * (1 + r.lo_pct / 100)).toFixed(2)],
+                      data: fin(r.lo_pct) === null ? []
+                            : [c, +(c * (1 + r.lo_pct / 100)).toFixed(2)],
                       borderColor: 'rgba(56,189,248,.35)',
                       fill: false, pointRadius: 0, borderDash: [4, 4] },
                     { label: 'Forecast', data: [c, r.projected_rate],

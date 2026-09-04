@@ -228,6 +228,177 @@ def main():
     check('chart draws forecast AND actual',
           "label: 'Forecast'" in html and "label: 'Actual'" in html)
 
+    # A global helper that is also declared inside a function is shadowed
+    # there, so calls in that scope silently hit the wrong function. This
+    # is invisible to every other check here - the page still returns
+    # 200 and the HTML still contains all the right strings - but a panel
+    # renders blank because the handler threw part-way through.
+    top = set(re.findall(r'\n {8}(?:const|let)\s+(\w+)\s*=', html)) | \
+        set(re.findall(r'\n {8}function\s+(\w+)\s*\(', html))
+    nested = set(re.findall(r'\n {12,}(?:const|let)\s+(\w+)\s*=', html))
+    shadowed = sorted(top & nested)
+    check('no global helper is shadowed by a local of the same name',
+          not shadowed,
+          'shadowed: %s - calls inside that function hit the local'
+          % shadowed)
+
+    # The null-safe render path must exist: the API sends null for a
+    # non-finite value, and the page must not print "null%".
+    check('page has a finite-guard helper for null API values',
+          'const fin =' in html and 'fin(r.' in html)
+    check('pct() renders a dash rather than "null%" for a missing value',
+          "v === null" in html and "'—'" in html)
+
+    print('\n[9] the port endpoints agree with src/ports.py')
+    from src import ports as P
+    ref = requests.get(BASE + '/api/ports', timeout=15).json()
+    check('reference lists every vessel and port',
+          len(ref['vessels']) == len(P.VESSELS)
+          and len(ref['ports']) == len(P.PORTS))
+
+    mismatch = []
+    for row in ref['matrix']:
+        for cell in row['cells']:
+            local = P.can_serve(row['vessel'], cell['port'])
+            if (cell['max_cargo_t'] != local['max_cargo_t']
+                    or cell['verdict'] != local['verdict']):
+                mismatch.append('%s/%s api=%s,%s local=%s,%s'
+                                % (row['vessel'], cell['port'],
+                                   cell['max_cargo_t'], cell['verdict'],
+                                   local['max_cargo_t'], local['verdict']))
+    check('all %d matrix cells match the module exactly'
+          % sum(len(r['cells']) for r in ref['matrix']), not mismatch,
+          mismatch[:3])
+
+    r = requests.post(BASE + '/api/ports/options', timeout=15,
+                      json={'parcel_t': 160000}).json()
+    local = P.options_for(160000)
+    check('options endpoint returns the same ranking as the module',
+          [(o['vessel'], o['port']) for o in r['options']]
+          == [(o['vessel'], o['port']) for o in local])
+    check('best option is the first option',
+          r['best']['vessel'] == r['options'][0]['vessel']
+          and r['best']['port'] == r['options'][0]['port'])
+    check('a bigger ship does not outrank a better-filling one',
+          all(a['parcel_utilisation'] >= b['parcel_utilisation']
+              for a, b in zip(r['options'], r['options'][1:])
+              if a['voyages'] == b['voyages']
+              and a['verdict'] == b['verdict']))
+
+    # Changing the parcel must change the answer, or the panel is inert.
+    small = requests.post(BASE + '/api/ports/options', timeout=15,
+                          json={'parcel_t': 75000}).json()
+    check('a 75,000 t parcel picks a different vessel than 160,000 t',
+          small['best']['vessel'] != r['best']['vessel'],
+          '%s vs %s' % (small['best']['vessel'], r['best']['vessel']))
+
+    print('\n[10] port endpoint input handling')
+    cases = [({}, 400), ({'parcel_t': 0}, 400), ({'parcel_t': -1}, 400),
+             ({'parcel_t': 'abc'}, 400), ({'parcel_t': None}, 400),
+             ({'parcel_t': 1e99}, 400), ({'parcel_t': 160000}, 200),
+             ({'parcel_t': 1}, 200)]
+    wrong = [(c, e, requests.post(BASE + '/api/ports/options', timeout=15,
+                                  json=c).status_code) for c, e in cases]
+    wrong = [w for w in wrong if w[1] != w[2]]
+    check('%d parcel inputs return the right status' % len(cases),
+          not wrong, wrong)
+    check('GET on the options route -> 405',
+          requests.get(BASE + '/api/ports/options',
+                       timeout=15).status_code == 405)
+
+    print('\n[11] the page actually renders the port panel')
+    for hook in ('portOptBody', 'portMatrixBody', 'portBest', 'parcel_t',
+                 'loadPortMatrix', 'portOptions'):
+        check('page wires %r' % hook, hook in html)
+    check('port panel explains fill vs ship utilisation',
+          'not how full each ship could be' in html)
+
+    print('\n[12] the congestion endpoints agree with src/congestion.py')
+    from src import congestion as CG
+    cg = requests.get(BASE + '/api/congestion', timeout=20).json()
+    check('a snapshot is returned for all %d ports, both ends'
+          % len(CG.ALL_PORTS),
+          len(cg['snapshots']) == len(CG.ALL_PORTS))
+    check('the response splits discharge (%d) from load (%d)'
+          % (len(CG.DISCHARGE), len(CG.LOAD)),
+          len(cg['discharge']) == len(CG.DISCHARGE)
+          and len(cg['load']) == len(CG.LOAD))
+    check('every load terminal reports exported tonnage, not imported',
+          all(s['flow'] == 'exported' for s in cg['load'])
+          and all(s['flow'] == 'imported' for s in cg['discharge']))
+    # Reading imports at an export terminal is not a rounding error: Hay
+    # Point and Newcastle handle no dry bulk imports at all.
+    hp = next(s for s in cg['load'] if s['port'] == 'hay_point')
+    check('Hay Point reports %s t/day exported, not zero'
+          % '{:,}'.format(hp['lane_t_per_day']),
+          hp['lane_t_per_day'] > 50000)
+    # Every Indian discharge port also loads - Paradip ships 60% of its
+    # dry bulk out as iron ore, competing for the same berths.
+    par = next(s for s in cg['discharge'] if s['port'] == 'paradip')
+    check('Paradip throughput %s t/day exceeds its %s t/day inbound'
+          % ('{:,}'.format(par['throughput_t_per_day']),
+             '{:,}'.format(par['lane_t_per_day'])),
+          par['throughput_t_per_day'] > par['lane_t_per_day'] * 2)
+    bad = []
+    for s in cg['snapshots']:
+        if 'error' in s:
+            bad.append('%s errored' % s['port'])
+            continue
+        local = CG.snapshot(s['port'])
+        for k in ('calls_per_day', 'baseline_calls_per_day', 'percentile',
+                  'band', 'reliable', 'as_of'):
+            if s[k] != local[k]:
+                bad.append('%s.%s api=%r local=%r'
+                           % (s['port'], k, s[k], local[k]))
+    check('every snapshot field matches the module', not bad, bad[:4])
+
+    check('the response states it is not waiting time',
+          'not waiting time' in cg['measures']
+          and 'queue length' in cg['caveat'])
+    check('an unreliable port is never given an activity band',
+          all(s['band'] == 'unreliable'
+              for s in cg['snapshots'] if not s.get('reliable')))
+    check('every reliable port outranks every unreliable one',
+          [s.get('reliable', False) for s in cg['snapshots']]
+          == sorted([s.get('reliable', False) for s in cg['snapshots']],
+                    reverse=True))
+
+    # The point of this panel is that it is CURRENT, unlike the forecast.
+    newest = max(s['as_of'] for s in cg['snapshots'] if 'as_of' in s)
+    check('port data (%s) is far more recent than the forecast window (%s)'
+          % (newest, str(oos.index.max().date())),
+          pd.Timestamp(newest) > oos.index.max() + pd.Timedelta(days=365))
+
+    prof = cg['monthly_profile']
+    check('a 12-month profile exists for every port',
+          all(p is not None and len(p) == 12 for p in prof.values()))
+
+    print('\n[13] the per-port series endpoint')
+    r = requests.get(BASE + '/api/congestion/paradip?days=120',
+                     timeout=20).json()
+    check('returns 120 points with a snapshot attached',
+          len(r['series']) == 120 and 'snapshot' in r)
+    check('series values are finite and non-negative',
+          all(isinstance(p['calls'], int) and p['calls'] >= 0
+              and p['smoothed'] >= 0 and p['throughput'] >= p['lane']
+              for p in r['series']))
+    check('unknown port -> 400 naming the valid ports',
+          requests.get(BASE + '/api/congestion/atlantis',
+                       timeout=15).status_code == 400)
+    check('days is clamped rather than trusted',
+          len(requests.get(BASE + '/api/congestion/paradip?days=99999',
+                           timeout=20).json()['series']) <= 1000)
+    check('non-numeric days -> 400',
+          requests.get(BASE + '/api/congestion/paradip?days=abc',
+                       timeout=15).status_code == 400)
+
+    print('\n[14] the page renders the congestion panel')
+    for hook in ('congCards', 'congChart', 'congPort', 'seasonBody',
+                 'loadCongestion', 'drawCongestion', 'ordinal'):
+        check('page wires %r' % hook, hook in html)
+    check('panel says plainly that this is the only current data',
+          'only current data' in html)
+
     print('\n' + '=' * 62)
     if FAIL:
         print('  %d CHECK(S) FAILED:' % len(FAIL))
