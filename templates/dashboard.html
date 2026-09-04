@@ -1,10 +1,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SAIL · Freight Intelligence</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Both of these were loaded from a CDN until it was tested properly.
+     With no network the fonts merely fell back, but chart.js did not
+     load at all, and the inline script below then threw on a missing
+     global - which took the date field, the recommendation panel and
+     the live badge down with it. The page did not degrade, it broke,
+     and it broke on the one view a demo opens with. Vendored here so
+     the dashboard is identical with the wifi off. -->
+<link rel="stylesheet" href="/static/vendor/fonts/fonts.css">
+<script src="/static/vendor/chart.umd.min.js"></script>
 <style>
 /* ─────────────────────────────────────────────────────────
    Warm industrial palette — the colours of the trade itself:
@@ -469,6 +474,41 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
     </div>
 
     <div class="card">
+      <div class="cap">What the forecast was worth &middot; simulated procurement</div>
+      <p class="note" style="margin:0 0 8px">Direction accuracy is a statistic; a steel producer
+        buys freight. So: a cargo has to move, and the desk either fixes today or holds one
+        forecast horizon and fixes then. Every figure is a share <em>of the freight rate</em> —
+        the Baltic series here is an index in points, this repository has no sourced conversion
+        to dollars, and inventing one would put a fabricated number at the centre of the result.
+        Decisions are spaced a full horizon apart, so no market move is counted twice.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Policy</th><th class="n">Saved, % of rate</th>
+          <th class="n">Win rate</th><th class="n">Fixtures held</th><th></th></tr></thead>
+        <tbody id="procBody"><tr><td colspan="5"><span class="skel"></span></td></tr></tbody>
+      </table></div>
+      <p class="note" id="procVerdict" style="margin:10px 0 0"></p>
+      <p class="note" id="procLimits" style="margin:6px 0 0"></p>
+    </div>
+
+    <div class="card">
+      <div class="cap">Where it works, and where it stops &middot; every year, including the bad ones</div>
+      <p class="note" style="margin:0 0 8px">One number over eight years invites exactly one
+        question — <em>does it still work?</em> — and answering from the same average is not an
+        answer. Split by calendar year, which nobody can accuse us of choosing. The two columns
+        disagree, and that disagreement is the point: RMSE skill measures variance explained, so
+        it falls apart in a calm market where there is little variance to explain and a few large
+        misses dominate. Direction is scale-free. This repository called that fragility in writing
+        before it measured it.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Year</th><th class="n">Weeks</th><th class="n">Direction</th>
+          <th class="n">Base rate</th><th class="n">RMSE skill</th>
+          <th class="n">Volatility of y</th><th class="n">Strongest 50%</th></tr></thead>
+        <tbody id="regBody"><tr><td colspan="7"><span class="skel"></span></td></tr></tbody>
+      </table></div>
+      <p class="note" id="regNote" style="margin:10px 0 0"></p>
+    </div>
+
+    <div class="card">
       <div class="cap">Control experiment</div>
       <p class="note" style="margin:0 0 8px">The Baltic Capesize index is a daily broker
         <em>survey</em>; panellists anchor on the previous print, so its returns are
@@ -744,8 +784,9 @@ async function predict() {
 /* ═══════════ 04 · validation ═══════════ */
 async function loadMetrics() {
     try {
-        const [mr, cr, dr] = await Promise.all(
-            [fetch('/api/metrics'), fetch('/api/control'), fetch('/api/dates')]);
+        const [mr, cr, dr, pr] = await Promise.all(
+            [fetch('/api/metrics'), fetch('/api/control'), fetch('/api/dates'),
+             fetch('/api/procurement')]);
         if (!mr.ok) throw new Error('metrics');
         const m = await mr.json();
         const best = m.models[m.best_model];
@@ -784,6 +825,8 @@ async function loadMetrics() {
         // from /api/metrics - and a non-OK response hit `if (x.ok)`
         // with no else, leaving a skeleton pulsing for the life of the
         // tab with nothing to explain it.
+        await fillProcurement(pr);
+        fillRegimes(m.models.regimes);
         await fillDates(dr);
         await fillControl(cr, best);
     } catch (e) {
@@ -831,6 +874,123 @@ function fillConfidence(c) {
         + 'same weeks, not against a coin, counted in non-overlapping windows ('
         + top.n_effective + ' of them in the narrowest tier) and adjusted for testing '
         + c.tiers.length + ' tiers.';
+}
+
+async function fillProcurement(pr) {
+    const body = document.getElementById('procBody');
+    const verdict = document.getElementById('procVerdict');
+    const limits = document.getElementById('procLimits');
+    const stall = msg => {
+        body.innerHTML = '<tr><td colspan="5">' + rkEsc(msg) + '</td></tr>';
+    };
+    try {
+        if (!pr.ok) {
+            const e = await pr.json().catch(() => ({}));
+            stall(e.error || 'procurement backtest unavailable');
+            return;
+        }
+        const r = await pr.json();
+        // Order runs worst to best so the ceiling reads as a ceiling and
+        // the control - which LOSES - is the first thing seen.
+        const rows = [
+            [r.control, 'no model at all'],
+            [r.momentum, 'the naive rule'],
+            [r.model_policy, 'this model'],
+            [r.ceiling, 'the ceiling']];
+        body.innerHTML = rows.map(([d, tag]) => {
+            const good = d.saved_pct > 0;
+            return '<tr><td>' + rkEsc(d.policy) + '</td>'
+                + '<td class="n" style="font-weight:700">' + pct(d.saved_pct) + '</td>'
+                + '<td class="n">' + nfix(d.win_pct, 1) + '%</td>'
+                + '<td class="n">' + nloc(d.n_waited) + '</td>'
+                + '<td><span class="tag ' + (good ? 't-good' : 't-bad') + '">'
+                + rkEsc(tag) + '</span></td></tr>'; }).join('');
+
+        // The momentum tie is the caveat most easily buried, so it is
+        // stated in the same breath as the win, not in a footnote.
+        const tie = !(r.p_vs_momentum < 0.05);
+        verdict.innerHTML = 'Over <b>' + nloc(r.n_fixtures) + '</b> independent fixtures, '
+            + fmtDate(r.start) + ' to ' + fmtDate(r.end) + ', timing fixtures on the forecast '
+            + 'beat fixing today (p = ' + nfix(r.p_vs_zero, 3) + ') and beat waiting every '
+            + 'time (p &lt; 0.0001), capturing <b>' + nfix(r.capture_pct, 0) + '%</b> of what '
+            + 'perfect foresight would have taken. Waiting every time <em>loses</em> '
+            + pct(r.control.saved_pct) + ', because the index rose across this period — so the '
+            + 'saving is a forecast, not a drift being harvested.'
+            + (tie ? ' <b>It is not distinguishable from the momentum rule on money</b> (p = '
+                + nfix(r.p_vs_momentum, 2) + '); the model earns its place on RMSE and '
+                + 'direction, and on this decision the two are a tie.' : '');
+
+        limits.innerHTML = 'It loses on <b>' + nfix(r.lose_rate_pct, 0) + '%</b> of the weeks '
+            + 'it holds, worst single decision ' + pct(r.model_policy.worst_pct) + '. Holding '
+            + 'also burns laycan and risks the vessel, which is not priced here, so this bounds '
+            + 'the rate component alone. At a freight rate of $20/t it is worth about $'
+            + nfix(r.model_policy.saved_pct / 100 * 20, 2) + '/t — supply your own rate, none '
+            + 'is asserted.';
+    } catch (e) {
+        stall('procurement backtest unavailable');
+    }
+}
+
+function fillRegimes(g) {
+    const body = document.getElementById('regBody');
+    const note = document.getElementById('regNote');
+    if (!g || !Array.isArray(g.rows) || !g.rows.length) {
+        body.innerHTML = '<tr><td colspan="7">This model run did not report a '
+            + 'per-year breakdown. Re-run <code>python -m src.train_model</code>.</td></tr>';
+        note.textContent = '';
+        return;
+    }
+    body.innerHTML = g.rows.map(r => {
+        const bad = r.skill_pct < 0;
+        // Direction only means something against that year's own base
+        // rate - a year that rose 60% of the time hands 60% to a
+        // predictor that always says "up".
+        const beats = r.direction_pct > r.base_rate_pct;
+        return '<tr><td>' + rkEsc(r.period) + '</td>'
+            + '<td class="n">' + nloc(r.n) + '</td>'
+            + '<td class="n" style="font-weight:700">' + nfix(r.direction_pct, 1) + '%</td>'
+            + '<td class="n" style="opacity:.7">' + nfix(r.base_rate_pct, 1) + '%</td>'
+            + '<td class="n"><span class="tag ' + (bad ? 't-bad' : 't-good') + '">'
+            + pct(r.skill_pct) + '</span></td>'
+            + '<td class="n" style="opacity:.7">' + nfix(r.volatility_pct, 1) + '%</td>'
+            + '<td class="n"' + (beats ? '' : ' style="opacity:.7"') + '>'
+            + (r.strong_direction_pct === null || r.strong_direction_pct === undefined
+                ? '&mdash;' : nfix(r.strong_direction_pct, 1) + '%') + '</td></tr>'; }).join('');
+
+    // Counted, never asserted. An earlier draft of this note claimed
+    // direction held above the base rate in every year; the table
+    // directly above it said otherwise in two of them. A sentence that
+    // restates the data instead of reading it will eventually contradict
+    // it in front of the person it was written to convince.
+    const weak = g.rows.filter(r => r.skill_pct < 0);
+    const below = g.rows.filter(r => r.direction_pct <= r.base_rate_pct);
+    const tierFails = weak.filter(r => r.strong_direction_pct !== null
+        && r.strong_direction_pct !== undefined);
+    const yrs = rs => rs.map(r => r.period).join(' and ');
+    let t = '';
+    if (weak.length) {
+        t = 'RMSE skill is <b>negative in ' + weak.length + ' of ' + g.rows.length
+            + ' years</b> (' + yrs(weak) + '), and the calm years are where it goes — there is '
+            + 'little variance left to explain. ';
+    }
+    t += 'Direction beats that year&rsquo;s own base rate in <b>'
+        + (g.rows.length - below.length) + ' of ' + g.rows.length + ' years</b>'
+        + (below.length
+            ? '. It does not in ' + yrs(below) + ', where always saying &ldquo;up&rdquo; would '
+              + 'have scored better — and those are ' + (below.length === weak.length
+                  && below.every(r => r.skill_pct < 0)
+                  ? 'the same years the skill column fails. A bad year here is bad on every '
+                    + 'measure at once, not on one of them.'
+                  : 'set out above rather than averaged away.')
+            : ', so it never falls back on the drift.');
+    if (tierFails.length) {
+        t += ' The confidence rule does <b>not</b> rescue those years either ('
+            + tierFails.map(r => r.period + ' at ' + nfix(r.strong_direction_pct, 1)
+                + '%').join(', ')
+            + '): in a bad year the model is confidently wrong. That is a real limit, and the '
+            + 'honest use of this table is to show the aggregate is carried by 2019 to 2021.';
+    }
+    note.innerHTML = t;
 }
 
 async function fillDates(dr) {
@@ -1469,12 +1629,32 @@ async function loadRisk() {
     document.getElementById('riskAsOf').textContent =
         '· ' + d.forecast_days + '-day outlook, ' + (d.warnings || []).length + ' checks';
 
+    // A cached forecast produces mostly CLEAR rows, and clear rows are
+    // collapsed out of sight below - so without this line an offline
+    // panel reads as a fully green all-clear with nothing to say that
+    // five of its checks are not live. That is precisely the
+    // reassuring-from-no-data failure this module is built to avoid,
+    // so the notice goes at the top where the counts are, not inside
+    // the collapsed list.
+    const stale = (d.warnings || []).filter(w => w.live === false);
+    const staleAge = stale.length
+        ? Math.max.apply(null, stale.map(w => w.stale_hours || 0)) : 0;
+    const staleNote = !stale.length ? '' :
+        ' <b style="color:' + (SEV_INK.warning || 'inherit') + '">'
+        + stale.length + ' of these are not live</b> &mdash; the weather service '
+        + 'could not be reached, so they come from the last forecast that arrived, '
+        + (staleAge < 1.5 ? 'under an hour ago'
+            : staleAge < 36 ? Math.round(staleAge) + ' hours ago'
+            : Math.round(staleAge / 24) + ' days ago')
+        + '. Days it covered that have already passed have been dropped, and a '
+        + 'forecast older than three days is refused outright rather than shown.';
+
     document.getElementById('riskEvidence').innerHTML =
         '<b>' + d.measured + '</b> of these rest on a measured effect; <b>'
         + d.context_only + '</b> are context with no measured effect size. '
         + 'The halt threshold is <b>' + d.gust_halt_kmh + ' km/h</b> &mdash; not a round '
         + 'number chosen for looks, but the level at which arrivals were '
-        + 'observed to stop.';
+        + 'observed to stop.' + staleNote;
 
     const rows = d.warnings || [];
     const raised = rows.filter(w => w.severity !== 'clear');

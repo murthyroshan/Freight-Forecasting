@@ -26,12 +26,14 @@ implying it is current.
 Run:  python -m src.risk
 """
 
+import json
 import os
 import sys
 
 import numpy as np
 import pandas as pd
 import requests
+from concurrent import futures
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
@@ -56,12 +58,28 @@ RAIN_HEAVY_MM = 50.0
 
 FORECAST_DAYS = 10
 
-# Per-port timeout. assess() calls this once per site in sequence, so
-# the worst case a caller can wait is TIMEOUT x len(SITES). That product
-# has to stay under the browser's own timeout, which in turn stays under
-# the one tests/test_app.py uses: 12 x 5 = 60s server, 75s browser, 90s
-# test. tests/test_risk.py asserts the first of those.
+# Per-port read timeout. assess() used to call this once per site in
+# SEQUENCE, so a venue with no working wifi cost TIMEOUT once per port -
+# 60 seconds before the panel rendered anything. Every row degraded
+# correctly at the end of it, which is why no test caught it: the
+# payload was right and only the wait was wrong. The calls are
+# independent, so they are now issued together and the worst case is one
+# timeout rather than five.
 TIMEOUT = 12
+
+# Split out from the read timeout because the two failures are not the
+# same. A reachable-but-slow API should be given time to answer; an
+# unreachable one should be abandoned quickly, and a dead network is
+# almost always the second. Connecting is fast or not at all, so four
+# seconds is generous for it while cutting the offline worst case from
+# TIMEOUT to this.
+CONNECT_TIMEOUT = 4
+
+# What a caller can actually wait for now, in either condition. The
+# budget still has to sit under the browser's own abort, which sits
+# under the one tests/test_app.py uses: 12s server, 75s browser, 90s
+# test. tests/test_risk.py asserts it.
+WORST_CASE = TIMEOUT
 
 SEVERITY_ORDER = {'critical': 0, 'warning': 1, 'watch': 2, 'clear': 3}
 
@@ -86,15 +104,131 @@ def _unavailable(port, what, exc):
             'measured': False,
             'title': '%s unavailable' % what,
             'detail': ('This check could not run, so it is neither clear nor '
-                       'raised: %s' % str(exc)[:110]),
+                       'raised: %s' % _why(exc)),
             'basis': ('no data - surfaced so the gap is visible rather than '
                       'silently reducing the number of checks')}
+
+
+# Where a successful forecast is kept so the panel still has something
+# to say with the wifi off. Under data/, which is gitignored, so a fresh
+# clone starts with no cache and degrades to "unavailable" rather than
+# shipping someone else's stale weather.
+CACHE_DIR = os.path.join(paths.PROCESSED, 'weather_cache')
+
+# How old a cached forecast may be before it is refused outright. A
+# ten-day outlook fetched three days ago still has seven usable days
+# left in it, which is worth showing; past that the remaining window is
+# too short to be worth the ambiguity of presenting at all. Refusing is
+# not the cautious option here - it is the honest one, because the
+# alternative is a panel quietly describing weather from last month.
+CACHE_MAX_AGE_H = 72
+
+
+def _cache_file(port):
+    return os.path.join(CACHE_DIR, 'forecast_%s.json' % port)
+
+
+def _cache_write(port, frame):
+    """Keep the last good forecast. Never allowed to break a live call."""
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        payload = {
+            'port': port,
+            'fetched': pd.Timestamp.now('UTC').isoformat(),
+            'days': [{'date': str(r['date'].date()), 'gust': float(r['gust']),
+                      'wind': float(r['wind']), 'rain': float(r['rain'])}
+                     for _, r in frame.iterrows()],
+        }
+        with open(_cache_file(port), 'w', encoding='utf-8') as fh:
+            json.dump(payload, fh, indent=2)
+    except Exception:
+        # A cache that cannot be written must not turn a working
+        # forecast into an outage. The live answer is already in hand.
+        pass
+
+
+def _cache_read(port, days):
+    """The last good forecast, if it is recent enough to still mean something.
+
+    Returns (frame, age_in_hours), or (None, None). Two things are
+    enforced here rather than left to the caller. The whole file is
+    refused once it is older than CACHE_MAX_AGE_H. And the days inside
+    it that have already happened are dropped, because a ten-day
+    outlook taken three days ago is a seven-day outlook now, and
+    reporting "over the next 10 days" off it would be a claim about
+    three days that are already in the past.
+    """
+    try:
+        with open(_cache_file(port), encoding='utf-8') as fh:
+            payload = json.load(fh)
+        fetched = pd.Timestamp(payload['fetched'])
+        if fetched.tzinfo is None:
+            fetched = fetched.tz_localize('UTC')
+        age_h = (pd.Timestamp.now('UTC') - fetched).total_seconds() / 3600.0
+        if not np.isfinite(age_h) or age_h < 0 or age_h > CACHE_MAX_AGE_H:
+            return None, None
+        f = pd.DataFrame(payload['days'])
+        if f.empty:
+            return None, None
+        f['date'] = pd.to_datetime(f['date'])
+        for c in ('gust', 'wind', 'rain'):
+            f[c] = pd.to_numeric(f[c], errors='coerce')
+        today = pd.Timestamp.now().normalize()
+        f = f[(f['date'] >= today) & np.isfinite(f['gust'])]
+        f = f.head(days).reset_index(drop=True)
+        if f.empty:
+            return None, None
+        return f, age_h
+    except Exception:
+        return None, None
+
+
+def _stale_note(age_h):
+    """How the age of a cached forecast is said out loud."""
+    if age_h < 1.5:
+        return 'about an hour ago'
+    if age_h < 36:
+        return '%.0f hours ago' % age_h
+    return '%.0f days ago' % round(age_h / 24.0)
+
+
+def _why(exc):
+    """Plain English for the failures a live demo actually hits.
+
+    The raw text of a requests failure is a stack of connection-pool
+    internals - "HTTPSConnectionPool(host=..., port=443): Max retries
+    exceeded with url: /v1/forecast?latitude..." - which tells a
+    chartering desk nothing and reads, in front of an audience, like the
+    software is broken rather than the wifi. The distinction matters
+    because the row is otherwise correct: the check genuinely did not
+    run, and that is worth saying clearly.
+
+    Nothing is swallowed. An unrecognised failure still comes through
+    verbatim, because a message nobody anticipated is exactly the one
+    that must not be smoothed into a reassuring sentence.
+    """
+    # ConnectTimeout subclasses BOTH ConnectionError and Timeout, so it
+    # has to be tested before either of them or it will be reported as
+    # the wrong kind of failure.
+    if isinstance(exc, requests.exceptions.ConnectTimeout):
+        return ('the weather service did not accept a connection within '
+                '%ds' % CONNECT_TIMEOUT)
+    if isinstance(exc, requests.exceptions.ReadTimeout):
+        return 'the weather service did not answer within %ds' % TIMEOUT
+    if isinstance(exc, (requests.exceptions.ProxyError,
+                        requests.exceptions.SSLError)):
+        return 'the network refused the connection to the weather service'
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return ('the weather service could not be reached - there is no '
+                'working network connection')
+    return str(exc)[:110]
 
 
 def _forecast(port, days=FORECAST_DAYS, timeout=TIMEOUT):
     """Ten-day gust and rainfall outlook for one discharge port."""
     lat, lon = congestion_site(port)
-    r = requests.get('https://api.open-meteo.com/v1/forecast', timeout=timeout,
+    r = requests.get('https://api.open-meteo.com/v1/forecast',
+                     timeout=(CONNECT_TIMEOUT, timeout),
                      params={'latitude': lat, 'longitude': lon,
                              'daily': ('wind_gusts_10m_max,wind_speed_10m_max,'
                                        'precipitation_sum'),
@@ -151,15 +285,26 @@ def weather_warnings(port, days=FORECAST_DAYS):
     # be answered with a reassuring "no disruptive weather". Check it
     # before the try, so only genuine failures degrade.
     congestion_site(port)
+    stale_h = None
     try:
         f = _forecast(port, days)
         if f.empty:
             raise RuntimeError('forecast returned no days')
+        _cache_write(port, f)
     except Exception as exc:
-        # Not 'clear'. A clear row means we looked and found nothing; an
-        # outage means we did not look, and the dashboard collapses clear
-        # rows out of sight.
-        return [_unavailable(port, 'Weather outlook', exc)]
+        # Before giving up, fall back to the last forecast that did
+        # arrive. A demo runs where the wifi may not, and an outlook
+        # taken yesterday is a far better answer than no outlook at
+        # all - PROVIDED nobody is allowed to mistake it for a live
+        # one. Everything built from it is labelled below, the file
+        # expires after CACHE_MAX_AGE_H, and days that have already
+        # happened are dropped from it.
+        f, stale_h = _cache_read(port, days)
+        if f is None:
+            # Not 'clear'. A clear row means we looked and found
+            # nothing; an outage means we did not look, and the
+            # dashboard collapses clear rows out of sight.
+            return [_unavailable(port, 'Weather outlook', exc)]
 
     # Report the horizon actually returned, never the one requested -
     # Open-Meteo can answer short, and "over the next 10 days" on three
@@ -226,6 +371,23 @@ def weather_warnings(port, days=FORECAST_DAYS):
                           RAIN_HEAVY_MM)),
             'basis': 'context only - no measured rainfall effect on arrivals',
         })
+
+    if stale_h is not None:
+        # Marked once, here, rather than in each branch above: a new
+        # warning added later is then labelled by construction instead
+        # of by remembering to. The title carries it too, because the
+        # dashboard shows titles in collapsed lists where the basis
+        # line is not visible.
+        when = _stale_note(stale_h)
+        for w in out:
+            w['stale_hours'] = round(float(stale_h), 1)
+            w['live'] = False
+            w['title'] = '%s (forecast from %s)' % (w['title'], when)
+            w['basis'] = ('%s - NOT live: the weather service could not be '
+                          'reached, so this is the last forecast that '
+                          'arrived, taken %s, with the days it covered that '
+                          'have already passed removed'
+                          % (w['basis'], when))
     return out
 
 
@@ -357,9 +519,20 @@ def assess(ports=None, month=None):
     if unknown:
         raise KeyError('no weather site for %s; known: %s'
                        % (', '.join(map(repr, unknown)), ', '.join(SITES)))
+    # Issued together, not one after another. Only the weather check
+    # touches the network; the berth and seasonal checks read artefacts
+    # already on disk, so they stay on this thread. Results are consumed
+    # in the original port order, so a fast port cannot overtake a slow
+    # one and reorder the panel - the output is identical to the
+    # sequential version, only sooner.
+    if ports:
+        with futures.ThreadPoolExecutor(max_workers=len(ports)) as ex:
+            forecasts = list(ex.map(weather_warnings, ports))
+    else:
+        forecasts = []
     out = []
-    for p in ports:
-        out.extend(weather_warnings(p))
+    for p, wx in zip(ports, forecasts):
+        out.extend(wx)
         w = berth_load_warning(p)
         if w:
             out.append(w)

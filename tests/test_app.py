@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 from src import paths  # noqa: E402
 
+import io
 import re
 import json
 
@@ -738,6 +739,75 @@ def _main():
           'const sev = SEV_TAG[w.severity] ? w.severity' in html)
     check('the "nothing raised" heading hides when that list is empty',
           "riskClearHead').hidden = clear.length === 0" in html)
+
+    print('\n[26] the page needs nothing from the internet')
+    # The demo runs at a venue whose wifi may not work. The SERVER was
+    # made safe first, and that turned out to be the easier half: the
+    # dashboard was still pulling chart.js from a CDN and its fonts from
+    # Google. With no network the fonts merely fell back, but chart.js
+    # did not load at all and the inline script then threw on a missing
+    # global - taking the date field, the recommendation panel and the
+    # live badge down with it. The opening view of the demo rendered as
+    # an empty box. Nothing here noticed, because every request these
+    # tests make is to 127.0.0.1, which is reachable with the wifi off.
+    # A cached forecast produces mostly CLEAR rows, and the panel
+    # collapses clear rows out of sight. Without a notice at the top,
+    # an offline panel therefore reads as a clean all-clear with
+    # nothing to say that some of its checks are not live - which is
+    # the reassuring-from-no-data failure the risk module exists to
+    # prevent, reintroduced at the presentation layer.
+    check('the panel counts the not-live checks',
+          'w.live === false' in html)
+    check('and says so where the COUNTS are, not inside the collapsed '
+          'clear list', 'are not live' in html
+          and html.index('are not live') < html.index("severity === 'clear'"))
+    check('the notice states the age of the fallback forecast',
+          'stale_hours' in html)
+    check('and that an old forecast is refused rather than shown',
+          'refused outright' in html)
+
+    ext = re.findall(r'(?:src|href)="(https?://[^"]+)"', html)
+    check('no script or stylesheet is loaded from another host%s'
+          % ('' if not ext else ': ' + ', '.join(sorted({
+              u.split('/')[2] for u in ext}))), not ext, ext[:3])
+    for want in ('/static/vendor/chart.umd.min.js',
+                 '/static/vendor/fonts/fonts.css'):
+        check('%s is referenced locally' % want, want in html)
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    vendor = os.path.join(root, 'static', 'vendor')
+    check('the vendored chart library is on disk',
+          os.path.exists(os.path.join(vendor, 'chart.umd.min.js')))
+    css_path = os.path.join(vendor, 'fonts', 'fonts.css')
+    check('and the vendored font stylesheet is too', os.path.exists(css_path))
+    if os.path.exists(css_path):
+        css = io.open(css_path, encoding='utf-8').read()
+        check('the font css pulls nothing back from the network',
+              'https://' not in css,
+              [l for l in css.splitlines() if 'https://' in l][:1])
+        # Each family here is a VARIABLE font, so all of its weights
+        # share one file. An earlier build of this bundle named the
+        # files per weight and left 12 of 18 references pointing at
+        # files that were never downloaded. The page then fell back
+        # silently - which looks fine until it is put side by side with
+        # the online version.
+        refs = sorted(set(re.findall(r'url\(\./([^)]+)\)', css)))
+        missing = [f for f in refs
+                   if not os.path.exists(os.path.join(vendor, 'fonts', f))]
+        check('all %d font files the css asks for exist' % len(refs),
+              not missing, missing)
+        check('and it asks for a plausible number of them',
+              len(refs) >= 3, refs)
+
+    for u in ('/static/vendor/chart.umd.min.js',
+              '/static/vendor/fonts/fonts.css'):
+        try:
+            rr = requests.get(BASE + u, timeout=10)
+            ok, detail = rr.status_code == 200, rr.status_code
+        except Exception as e:
+            ok, detail = False, str(e)[:60]
+        check('the server serves %s' % u, ok, detail)
+
 
     if FAIL:
         print('  %d CHECK(S) FAILED:' % len(FAIL))

@@ -49,6 +49,7 @@ from src import (paths, ports, congestion, risk, optimise,  # noqa: E402
 app = Flask(__name__)
 
 METRICS_PATH = os.path.join(paths.MODELS, 'metrics.json')
+PROCUREMENT_PATH = os.path.join(paths.MODELS, 'procurement.json')
 LIVE_PATH = os.path.join(paths.MODELS, 'live_metrics.json')
 OOS_PATH = os.path.join(paths.PROCESSED, 'oos_predictions.parquet')
 
@@ -58,6 +59,9 @@ MISSING = ('Artefact %s is missing. Run:  python -m src.fetch_data && '
 # The control experiment comes from a different script, and pointing the
 # reader at train_model would have them run the wrong one and see no
 # change.
+MISSING_PROCUREMENT = ('Artefact %s is missing. Run:  '
+                       'python -m src.train_model && python -m src.procurement')
+
 MISSING_LIVE = ('Artefact %s is missing. Run:  python -m src.fetch_data && '
                 'python -m src.live_model')
 
@@ -136,6 +140,7 @@ def _json_safe(obj):
 
 
 METRICS = _load_json(METRICS_PATH)
+PROCUREMENT = _load_json(PROCUREMENT_PATH)
 LIVE = _load_json(LIVE_PATH)
 OOS = pd.read_parquet(OOS_PATH) if os.path.exists(OOS_PATH) else None
 if OOS is not None:
@@ -234,6 +239,22 @@ def api_metrics():
     if METRICS is None:
         return jsonify({'error': MISSING % METRICS_PATH}), 503
     return jsonify(_json_safe(METRICS))
+
+
+@app.route('/api/procurement')
+def api_procurement():
+    """What the forecast was worth, as a share of the freight rate.
+
+    Deliberately serves no currency figure. The Baltic series is an
+    index in points and this repository carries no sourced conversion
+    to dollars, so the client multiplies by a rate the user supplies.
+    """
+    if PROCUREMENT is None:
+        # Not the generic MISSING text: none of the three commands it
+        # names writes this artefact, so a reader following it would
+        # run the whole pipeline and still be looking at a 503.
+        return jsonify({'error': MISSING_PROCUREMENT % PROCUREMENT_PATH}), 503
+    return jsonify(_json_safe(PROCUREMENT))
 
 
 @app.route('/api/control')

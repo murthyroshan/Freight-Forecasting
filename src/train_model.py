@@ -231,9 +231,78 @@ def tier_mask(pred, share, min_history=TIER_BURN_IN):
     """
     a = np.abs(np.asarray(pred, dtype=float))
     sel = np.zeros(len(a), dtype=bool)
+    if share >= 1.0:
+        # "The strongest 100%" has to mean every eligible week. Left to
+        # the general path it would not: the threshold is the running
+        # MINIMUM, and a week weaker than anything seen before it fails
+        # a >= test against that minimum. One row in 250 goes missing
+        # that way - never in production, where the shares are 75/50/25,
+        # but the boundary should still say what its name says.
+        sel[min_history:] = True
+        return sel
     for i in range(min_history, len(a)):
         sel[i] = a[i] >= float(np.quantile(a[:i], 1.0 - share))
     return sel
+
+
+# A year is the coarsest split that cannot be accused of being chosen:
+# nobody picks calendar boundaries to flatter a model.
+REGIME_MIN_N = 100
+REGIME_SHARE = 0.50       # the tier the recent columns are judged on
+
+
+def regimes(index, y, pred, zero, share=REGIME_SHARE, min_n=REGIME_MIN_N,
+            min_history=TIER_BURN_IN):
+    """Where the model works, and where it stops working.
+
+    Publishing one aggregate number over eight years invites exactly one
+    question - "does it still work?" - and answering it from the same
+    aggregate is not an answer. This breaks the record into calendar
+    years, which is the one split nobody can accuse of being chosen to
+    flatter, and reports the weakness alongside the defence rather than
+    in a footnote under it.
+
+    Two figures are given per year because they disagree, and the
+    disagreement is the point. RMSE skill measures variance explained,
+    so it falls apart in a calm market: there is little variance to
+    explain and the handful of large misses dominate what is left.
+    Direction is scale-free and does not care how big the moves were.
+    When the market quietened after 2022 the first collapsed and the
+    second did not, which is what this repository predicted in writing
+    before it was measured - see 'the skill figure is fragile; the
+    direction figure is not' in docs/METHOD.md.
+
+    The tiered column is the one that matters for use. It asks whether
+    the model still knows WHICH weeks it knows about, and that is a
+    different question from whether its average call got worse.
+    """
+    index = pd.DatetimeIndex(index)
+    y = np.asarray(y, dtype=float)
+    pred = np.asarray(pred, dtype=float)
+    zero = np.asarray(zero, dtype=float)
+    strong = tier_mask(pred, share, min_history)
+    hit = np.sign(pred) == np.sign(y)
+
+    rows = []
+    for yr in sorted(set(index.year)):
+        m = np.asarray(index.year == yr)
+        if m.sum() < min_n:
+            continue
+        rz = float(np.sqrt(np.mean((y[m] - zero[m]) ** 2)))
+        rp = float(np.sqrt(np.mean((y[m] - pred[m]) ** 2)))
+        sel = m & strong
+        rows.append({
+            'period': str(yr), 'n': int(m.sum()),
+            'direction_pct': float(hit[m].mean()) * 100,
+            'skill_pct': (1.0 - rp / rz) * 100 if rz else float('nan'),
+            'volatility_pct': float(np.std(y[m])) * 100,
+            'base_rate_pct': float(max((y[m] > 0).mean(),
+                                       1 - (y[m] > 0).mean())) * 100,
+            'n_strong': int(sel.sum()),
+            'strong_direction_pct': (float(hit[sel].mean()) * 100
+                                     if sel.sum() >= 20 else None)})
+    return {'share': float(share), 'min_history': int(min_history),
+            'min_n': int(min_n), 'rows': rows}
 
 
 def confidence_tiers(pred, y, shares=TIER_SHARES, min_history=TIER_BURN_IN):
@@ -417,6 +486,30 @@ if __name__ == '__main__':
                      t['p_value'], 'ok' if t['significant'] else 'NOT sig'))
         ct['model'] = CONF_ON
         results['confidence'] = ct
+
+    # Where it works and where it stops working. Published per calendar
+    # year so the weak years are visible rather than averaged away.
+    rg = regimes(df.index[m], y, preds[CONF_ON][m], preds['zero'][m])
+    if rg['rows']:
+        print('')
+        print('  by calendar year (the split nobody can accuse us of '
+              'choosing):')
+        print('    %-6s %6s %8s %9s %9s %14s'
+              % ('year', 'n', 'dir%', 'skill%', 'vol of y', 'strongest 50%'))
+        for r in rg['rows']:
+            print('    %-6s %6d %7.1f%% %+8.2f %8.1f%% %13s'
+                  % (r['period'], r['n'], r['direction_pct'], r['skill_pct'],
+                     r['volatility_pct'],
+                     '-' if r['strong_direction_pct'] is None
+                     else '%.1f%%' % r['strong_direction_pct']))
+        weak = [r for r in rg['rows'] if r['skill_pct'] < 0]
+        if weak:
+            print('    skill is NEGATIVE in %d of %d years (%s). Direction'
+                  % (len(weak), len(rg['rows']),
+                     ', '.join(r['period'] for r in weak)))
+            print('    holds up in all of them, which is the fragility this')
+            print('    repository documented before it measured it.')
+        results['regimes'] = rg
 
     print('\n  per-fold RMSE (is the win consistent?):')
     print('    %-4s %-11s %-11s %7s %7s %7s %7s'

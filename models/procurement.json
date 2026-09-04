@@ -1,0 +1,75 @@
+{
+  "model": "ridge",
+  "horizon_days": 5,
+  "n_fixtures": 395,
+  "burn_in": 49,
+  "start": "2018-02-02",
+  "end": "2026-08-27",
+  "unit": "percent of the freight rate",
+  "control": {
+    "policy": "always wait",
+    "n_waited": 395,
+    "saved_pct": -2.8808636829774676,
+    "win_pct": 47.59493670886076,
+    "worst_pct": -171.22507122507122,
+    "best_pct": 99.51690821256038
+  },
+  "model_policy": {
+    "policy": "wait when the model says fall",
+    "n_waited": 183,
+    "saved_pct": 1.9110152349900267,
+    "win_pct": 60.10928961748634,
+    "worst_pct": -110.11571481896229,
+    "best_pct": 99.51690821256038
+  },
+  "momentum": {
+    "policy": "wait when momentum says fall",
+    "n_waited": 210,
+    "saved_pct": 1.5177467455217606,
+    "win_pct": 57.14285714285714,
+    "worst_pct": -171.22507122507122,
+    "best_pct": 99.51690821256038
+  },
+  "ceiling": {
+    "policy": "perfect foresight",
+    "n_waited": 188,
+    "saved_pct": 7.855473178338131,
+    "win_pct": 100.0,
+    "worst_pct": 0.2068965517241339,
+    "best_pct": 99.51690821256038
+  },
+  "gated": [
+    {
+      "policy": "strongest 75% only",
+      "n_waited": 126,
+      "saved_pct": 1.7872909130452954,
+      "win_pct": 62.698412698412696,
+      "worst_pct": -110.11571481896229,
+      "best_pct": 99.51690821256038,
+      "share": 0.75
+    },
+    {
+      "policy": "strongest 50% only",
+      "n_waited": 84,
+      "saved_pct": 1.5316720818442546,
+      "win_pct": 64.28571428571429,
+      "worst_pct": -54.64135021097047,
+      "best_pct": 99.51690821256038,
+      "share": 0.5
+    },
+    {
+      "policy": "strongest 25% only",
+      "n_waited": 35,
+      "saved_pct": 0.9769866947649459,
+      "win_pct": 65.71428571428571,
+      "worst_pct": -54.64135021097047,
+      "best_pct": 99.51690821256038,
+      "share": 0.25
+    }
+  ],
+  "lose_rate_pct": 39.89071038251366,
+  "p_vs_zero": 0.01107039061883878,
+  "p_vs_control": 1.2070974612696365e-05,
+  "p_vs_momentum": 0.31543492201790224,
+  "capture_pct": 24.327181719106992
+}
