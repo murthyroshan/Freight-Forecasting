@@ -147,6 +147,37 @@ PORTS = {
 }
 
 
+# congestion.py and risk.py key ports in lowercase; this module uses the
+# display spelling, because these names are rendered directly. The MILP
+# will have to join the two, and a join that guesses at case fails
+# silently on the one port whose spelling differs. So state the mapping
+# once, here, and let tests/test_ports.py assert it stays exhaustive.
+#
+# Gangavaram and Sagar-Sandheads are berth-capability entries with no
+# PortWatch feed. They map to None rather than being left out, so a
+# lookup returns "no activity data" instead of raising a KeyError that
+# reads like a typo.
+PORTWATCH_KEY = {
+    'Paradip':         'paradip',
+    'Visakhapatnam':   'visakhapatnam',
+    'Dhamra':          'dhamra',
+    'Haldia':          'haldia',
+    'Gopalpur':        'gopalpur',
+    'Gangavaram':      None,
+    'Sagar-Sandheads': None,
+}
+
+
+def portwatch_key(port):
+    """The congestion/risk key for a port named as this module names it.
+
+    Returns None for a berth we model physically but hold no arrivals
+    for. Raises for a port this module does not know at all.
+    """
+    _port(port)
+    return PORTWATCH_KEY[port]
+
+
 def _vessel(name):
     if name not in VESSELS:
         raise KeyError('unknown vessel class %r; known: %s'
@@ -161,10 +192,21 @@ def _port(name):
     return PORTS[name]
 
 
+def _positive_density(density):
+    # `density <= 0` is False for NaN, so a NaN slips straight through a
+    # bare sign test and comes out the far end as a NaN TPC, a NaN
+    # allowance and finally a NaN tonnage on screen. Test for finite
+    # first.
+    if not (isinstance(density, (int, float))
+            and math.isfinite(density) and density > 0):
+        raise ValueError('water density must be a positive finite number, '
+                         'got %r' % (density,))
+    return float(density)
+
+
 def tpc(vessel, density=SEAWATER):
     """Tonnes per centimetre immersion."""
-    if density <= 0:
-        raise ValueError('water density must be positive, got %r' % density)
+    density = _positive_density(density)
     v = _vessel(vessel)
     waterplane = (v['loa'] * LWL_RATIO) * v['beam'] * CW
     return waterplane * density / 100.0
@@ -173,8 +215,7 @@ def tpc(vessel, density=SEAWATER):
 def dock_water_allowance(vessel, density):
     """Extra draft, in metres, from floating in water lighter than sea
     water. Zero at or above 1.025."""
-    if density <= 0:
-        raise ValueError('water density must be positive, got %r' % density)
+    density = _positive_density(density)
     if density >= SEAWATER:
         return 0.0
     v = _vessel(vessel)

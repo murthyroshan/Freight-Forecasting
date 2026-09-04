@@ -165,6 +165,26 @@ td.n,th.n{text-align:right;font-family:var(--fm)}
 .t-info{color:#155e5a;background:rgba(14,127,87,.12);border-color:rgba(14,127,87,.38)}
 .t-mute{color:var(--ink-3);background:var(--sunk);border-color:var(--rule-2)}
 
+/* ── risk warnings ────────────────────────────────────── */
+.rk{border:1px solid var(--rule);border-radius:4px;overflow:hidden;margin-top:10px}
+.rw{display:grid;grid-template-columns:4px 1fr;border-top:1px solid var(--rule-2)}
+.rw:first-child{border-top:0}
+.rw .bar{background:var(--rule-2)}
+.rw.s-critical .bar{background:var(--rust)}
+.rw.s-warning  .bar{background:var(--amber)}
+.rw.s-watch    .bar{background:var(--ink-3)}
+.rw.s-clear    .bar{background:var(--rule-2)}
+.rb{padding:13px 16px}
+.rh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rh b{font-size:12.5px;color:var(--ink-2)}
+.rt{font-weight:650;font-size:13.5px;color:var(--ink)}
+.ras{font-family:var(--fm);font-size:10.5px;color:var(--ink-3);margin-left:auto}
+.rd{font-size:12.5px;color:var(--ink-2);line-height:1.65;margin:7px 0 0}
+.rbs{font-family:var(--fm);font-size:10.5px;color:var(--ink-3);line-height:1.6;
+     margin:7px 0 0;padding-top:7px;border-top:1px dashed var(--rule-2)}
+.rq .rb{padding:9px 16px}
+.rq .rd,.rq .rbs{display:none}
+
 /* ── port cards ───────────────────────────────────────── */
 .pg{display:grid;grid-template-columns:repeat(auto-fit,minmax(162px,1fr));border:1px solid var(--rule);border-radius:4px;overflow:hidden;margin:10px 0 4px}
 .pc{padding:13px 14px;border-right:1px solid var(--rule);background:var(--card)}
@@ -204,7 +224,8 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
     <button data-v="timing" aria-current="true"><em>01</em>Charter timing</button>
     <button data-v="fleet"><em>02</em>Vessel &amp; port</button>
     <button data-v="ports"><em>03</em>Port activity</button>
-    <button data-v="proof"><em>04</em>Validation</button>
+    <button data-v="risk"><em>04</em>Risk</button>
+    <button data-v="proof"><em>05</em>Validation</button>
   </nav></div>
 
   <!-- ══════════ 01 · timing ══════════ -->
@@ -312,7 +333,34 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
     </div>
   </div>
 
-  <!-- ══════════ 04 · validation ══════════ -->
+  <!-- ══════════ 04 · risk ══════════ -->
+  <div class="view" id="v-risk">
+    <div class="lede">
+      <h2>What could go wrong in the next ten days</h2>
+      <p>Four signals, and the line between them matters more than the count.
+        A warning marked <b>MEASURED</b> has an effect size this repository
+        quantified and significance-tested. One marked <b>CONTEXT</b> is a real
+        observation with <em>no</em> measured effect — reported so a desk can
+        weigh it, never as a prediction. Mixing the two is how a risk panel
+        becomes decoration.</p>
+    </div>
+
+    <div class="card">
+      <div class="cap">Standing <span id="riskAsOf"></span></div>
+      <div class="pg" id="riskCounts"></div>
+      <p class="note" id="riskEvidence"></p>
+    </div>
+
+    <div class="card">
+      <div class="cap">Raised</div>
+      <div class="rk" id="riskList"></div>
+      <div class="gl" style="margin-top:20px" id="riskClearHead">Checked, nothing raised</div>
+      <div class="rk rq" id="riskClear"></div>
+      <p class="note" id="riskNote"></p>
+    </div>
+  </div>
+
+  <!-- ══════════ 05 · validation ══════════ -->
   <div class="view" id="v-proof">
     <div class="lede">
       <h2>Whether to believe any of it</h2>
@@ -384,6 +432,13 @@ const fmtDate = s => {
     return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : s;
 };
 const tons = n => (n === null || n === undefined) ? '—' : Math.round(n).toLocaleString();
+// Warning text is built by src/risk.py, not by a user - but it is
+// injected as HTML, so it is escaped anyway. A basis string is the last
+// place that should be able to close a tag.
+const rkEsc = t => String(t === null || t === undefined ? '' : t)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const rkTitle = t => String(t || '').split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 // 1st/2nd/3rd/4th, and 11–13 are always "th" — otherwise the 53rd
 // percentile renders as "53th".
 const ordinal = n => {
@@ -911,7 +966,108 @@ async function drawCongestion(port) {
 }
 
 /* ═══════════ view routing ═══════════ */
-const VIEWS = ['timing','fleet','ports','proof'];
+/* ── 04 · risk ─────────────────────────────────────────── */
+const SEV_TAG = {critical:'t-bad', warning:'t-warn', watch:'t-mute', clear:'t-good'};
+
+function riskRow(w) {
+    // severity lands in a class attribute, so take it from a whitelist
+    // rather than trusting the payload - an unexpected value becomes a
+    // visible unknown row, never markup.
+    const sev = SEV_TAG[w.severity] ? w.severity : 'watch';
+    const port = w.port ? rkTitle(w.port) : 'Model';
+    const mt = w.measured ? '<span class="tag t-info">MEASURED</span>'
+                          : '<span class="tag t-mute">CONTEXT</span>';
+    return '<div class="rw s-' + sev + '"><div class="bar"></div><div class="rb">'
+         + '<div class="rh"><span class="tag ' + SEV_TAG[sev] + '">'
+         + rkEsc(String(w.severity || 'unknown').toUpperCase()) + '</span>' + mt
+         + '<b>' + rkEsc(port) + '</b><span class="rt">' + rkEsc(w.title) + '</span>'
+         + (w.as_of ? '<span class="ras">' + rkEsc(fmtDate(w.as_of)) + '</span>' : '')
+         + '</div><p class="rd">' + rkEsc(w.detail) + '</p>'
+         + '<p class="rbs">basis &middot; ' + rkEsc(w.basis) + '</p></div></div>';
+}
+
+// Set only on a successful load, so reaching the view after an outage
+// retries instead of leaving the error on screen for the session.
+let riskLoaded = false;
+
+async function loadRisk() {
+    const list = document.getElementById('riskList');
+    list.innerHTML = '<div class="rw s-clear"><div class="bar"></div>'
+                   + '<div class="rb"><span class="rt">Reading forecasts&hellip;</span>'
+                   + '<p class="rd">One ten-day outlook per discharge port. '
+                   + 'This can take a few seconds when the cache is cold.</p>'
+                   + '</div></div>';
+    // The server's own worst case is one forecast call per port, so this
+    // request can legitimately take a while on a cold cache. Without a
+    // timeout a hung connection leaves "Reading forecasts" on screen for
+    // as long as the tab is open, with nothing to click.
+    let d;
+    const ctl = new AbortController();
+    const bail = setTimeout(() => ctl.abort(), 75000);
+    try {
+        const r = await fetch('/api/risk', { signal: ctl.signal });
+        d = await r.json();
+        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    } catch (e) {
+        if (e.name === 'AbortError') {
+            e = new Error('the assessment took longer than 75 seconds');
+        }
+        riskLoaded = false;
+        list.innerHTML = '<div class="rw s-warning"><div class="bar"></div><div class="rb">'
+            + '<div class="rh"><span class="tag t-warn">UNAVAILABLE</span>'
+            + '<span class="rt">Risk assessment could not run</span></div>'
+            + '<p class="rd">' + rkEsc(e.message)
+            + ' &mdash; reopening this view will try again.</p></div></div>';
+        document.getElementById('riskClearHead').hidden = true;
+        return;
+    } finally {
+        clearTimeout(bail);
+    }
+    riskLoaded = true;
+
+    const c = d.counts || {};
+    // Colour the count, but always keep the word beside it - a reader
+    // who cannot separate rust from amber still reads "Critical".
+    const SEV_INK = {critical:'var(--crit-t)', warning:'var(--warn-t)',
+                     watch:'var(--ink-2)', clear:'var(--good-t)'};
+    document.getElementById('riskCounts').innerHTML =
+        [['critical', 'Critical', 'berth expected to stop'],
+         ['warning',  'Warning',  'act before fixing'],
+         ['watch',    'Watch',    'no measured effect'],
+         ['clear',    'Clear',    'checked, nothing found']]
+        .map(k => {
+            const n = c[k[0]] || 0;
+            return '<div class="pc"><div class="nm">' + k[1] + '</div>'
+                 + '<div class="big"' + (n ? ' style="color:' + SEV_INK[k[0]] + '"' : '')
+                 + '>' + n + '</div><div class="sub">' + k[2] + '</div></div>';
+        }).join('');
+
+    document.getElementById('riskAsOf').textContent =
+        '· ' + d.forecast_days + '-day outlook, ' + (d.warnings || []).length + ' checks';
+
+    document.getElementById('riskEvidence').innerHTML =
+        '<b>' + d.measured + '</b> of these rest on a measured effect; <b>'
+        + d.context_only + '</b> are context with no measured effect size. '
+        + 'The halt threshold is <b>' + d.gust_halt_kmh + ' km/h</b> &mdash; not a round '
+        + 'number chosen for looks, but the level at which arrivals were '
+        + 'observed to stop.';
+
+    const rows = d.warnings || [];
+    const raised = rows.filter(w => w.severity !== 'clear');
+    const clear  = rows.filter(w => w.severity === 'clear');
+
+    list.innerHTML = raised.length
+        ? raised.map(riskRow).join('')
+        : '<div class="rw s-clear"><div class="bar"></div><div class="rb">'
+          + '<div class="rh"><span class="tag t-good">CLEAR</span>'
+          + '<span class="rt">Nothing raised at any berth</span></div></div></div>';
+    document.getElementById('riskClear').innerHTML = clear.map(riskRow).join('');
+    // No point heading an empty box.
+    document.getElementById('riskClearHead').hidden = clear.length === 0;
+    document.getElementById('riskNote').textContent = d.note || '';
+}
+
+const VIEWS = ['timing','fleet','ports','risk','proof'];
 function showView(name) {
     if (!VIEWS.includes(name)) name = 'timing';
     VIEWS.forEach(v => document.getElementById('v-'+v).classList.toggle('on', v === name));
@@ -932,6 +1088,7 @@ function showView(name) {
             if (chart) chart.resize();
             if (!chart || !chart.width) predict();
         }
+        if (name === 'risk' && !riskLoaded) loadRisk();
         if (name === 'ports') {
             if (congChart) congChart.resize();
             const sel = document.getElementById('congPort');
@@ -951,6 +1108,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     await loadMetrics();
     loadCongestion();
+    loadRisk();          // four live forecast calls; never block the page on it
     await loadPortMatrix();
 
     ['current_rate','volume','date'].forEach(id => {

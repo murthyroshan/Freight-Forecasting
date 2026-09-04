@@ -25,13 +25,15 @@ import os
 import json
 import math
 import sys
+import threading
+import time
 
 import numpy as np
 import pandas as pd
 from flask import Flask, request, jsonify, Response
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from src import paths, ports, congestion  # noqa: E402
+from src import paths, ports, congestion, risk  # noqa: E402
 
 app = Flask(__name__)
 
@@ -87,6 +89,31 @@ READY = METRICS is not None and OOS is not None and PANEL is not None
 
 
 DASHBOARD = os.path.join(paths.TEMPLATES, 'dashboard.html')
+
+
+# Werkzeug answers an unrouted path with an HTML error page. For a
+# browser that is right; for /api/* it means a client calling .json() on
+# the response gets a parse error instead of the reason. Keep every
+# answer under /api/ in the same format as the successful ones.
+def _api_error(exc, code, message):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': message, 'path': request.path}), code
+    return exc
+
+
+@app.errorhandler(404)
+def _not_found(exc):
+    return _api_error(exc, 404, 'no such endpoint')
+
+
+@app.errorhandler(405)
+def _bad_method(exc):
+    return _api_error(exc, 405, 'method not allowed for this endpoint')
+
+
+@app.errorhandler(500)
+def _server_error(exc):
+    return _api_error(exc, 500, 'internal error')
 
 
 @app.route('/')
@@ -264,6 +291,62 @@ def api_congestion_port(port):
                         'snapshot': congestion.snapshot(port)})
     except Exception as exc:
         return jsonify({'error': str(exc)}), 503
+
+
+# risk.assess() makes one live call to Open-Meteo per port. A short
+# cache keeps a page refresh from hammering a free API without making the
+# warnings meaningfully stale - a ten-day gust forecast does not change
+# by the minute.
+#
+# The lock matters because the miss is slow: without it, N browsers
+# arriving together on a cold cache each fire their own round of
+# forecasts. Holding it means the first computes and the rest wake to a
+# warm cache, so the free API sees one round of calls rather than N.
+_RISK_CACHE = {'at': 0.0, 'data': None}
+_RISK_TTL = 900          # seconds
+_RISK_LOCK = threading.Lock()
+
+
+@app.route('/api/risk')
+def api_risk():
+    """Deliverable (d). Every warning states whether its effect was
+    MEASURED by this repository or is context with no measured effect
+    size - the distinction matters more than the warning count."""
+    def fresh():
+        return (_RISK_CACHE['data'] is not None
+                and time.time() - _RISK_CACHE['at'] < _RISK_TTL)
+
+    if fresh():
+        payload = _RISK_CACHE['data']
+    else:
+        with _RISK_LOCK:
+            # Re-check inside the lock: whoever held it may already have
+            # done the work while this request was waiting.
+            if fresh():
+                return jsonify(_RISK_CACHE['data'])
+            try:
+                rows = risk.assess()
+            except Exception as exc:
+                return jsonify({'error': 'risk assessment unavailable: %s'
+                                % exc}), 503
+            payload = {
+                'warnings': rows,
+                'counts': {k: sum(1 for w in rows if w['severity'] == k)
+                           for k in ('critical', 'warning', 'watch', 'clear')},
+                'measured': sum(1 for w in rows if w['measured']),
+                'context_only': sum(1 for w in rows if not w['measured']),
+                'ports': sorted(risk.SITES),
+                'gust_halt_kmh': risk.GUST_HALT_KMH,
+                'gust_gale_kmh': risk.GUST_GALE_KMH,
+                'forecast_days': risk.FORECAST_DAYS,
+                'note': ('Only the cyclone rule and the interval width are '
+                         'measured effects. Berth load and seasonality are '
+                         'real observations with no measured effect size, '
+                         'and are labelled so a desk can weigh them rather '
+                         'than act on them as forecasts.'),
+            }
+            _RISK_CACHE.update(at=time.time(), data=payload)
+    return jsonify(payload)
 
 
 @app.route('/api/dates')

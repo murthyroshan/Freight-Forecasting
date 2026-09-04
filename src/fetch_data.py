@@ -98,11 +98,25 @@ PORTWATCH = ('https://services9.arcgis.com/weJ1QsnbMYJlCHdG/arcgis/rest/'
              'services/Daily_Ports_Data/FeatureServer/0/query')
 
 # Discharge ports, for the monsoon / weather signal.
+# All five east coast discharge ports.
+#
+# The first four coordinates are kept exactly as they were first fetched,
+# NOT snapped to PortWatch's published lat/lon, because the 90 km/h halt
+# threshold in src/risk.py was measured on this history. The shift is
+# only 3-5 km and for Paradip, Visakhapatnam and Haldia it lands in the
+# same ERA5 cell - identical readings. Dhamra does not: its peak gust in
+# the Cyclone Fani window reads 115.9 km/h here against 99.0 at
+# PortWatch's point, a different cell. Moving it would quietly move the
+# evidence, so it stays put.
+#
+# Gopalpur has no such history to preserve, so it takes PortWatch's own
+# coordinate from the ports database.
 WEATHER_SITES = {
     'paradip':       (20.26, 86.67),
     'visakhapatnam': (17.68, 83.21),
     'haldia':        (22.03, 88.08),
     'dhamra':        (20.78, 86.97),
+    'gopalpur':      (19.2911, 84.9574),
 }
 
 

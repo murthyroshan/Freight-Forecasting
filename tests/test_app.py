@@ -405,7 +405,142 @@ def main():
     check('panel says plainly that this is the only current data',
           'only current data' in html)
 
+    print('\n[18] concurrent cold requests cost one computation, not N')
+    # Without the lock, every browser arriving on a cold cache fires its
+    # own round of forecasts at a free API. The lock means the first
+    # computes and the rest wake to a warm cache.
+    import threading
+    import time as _time
+    import app as _app
+    from src import risk as _risk
+
+    FAKE = [{'kind': 'weather', 'port': 'paradip', 'severity': 'clear',
+             'measured': True, 'title': 'stub', 'detail': 'stub',
+             'basis': 'stub'}]
+    calls = []
+    real_assess = _risk.assess
+
+    def slow_assess(*a, **k):
+        calls.append(1)
+        _time.sleep(0.6)
+        return [dict(x) for x in FAKE]
+
+    codes = []
+    try:
+        _risk.assess = slow_assess
+        _app._RISK_CACHE.update(at=0.0, data=None)
+        client = _app.app.test_client()
+
+        def hit():
+            codes.append(client.get('/api/risk').status_code)
+
+        threads = [threading.Thread(target=hit) for _ in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        _risk.assess = real_assess
+        _app._RISK_CACHE.update(at=0.0, data=None)
+
+    check('all 6 concurrent requests returned 200',
+          codes == [200] * 6, codes)
+    check('but the assessment ran once, not 6 times', len(calls) == 1,
+          len(calls))
+
+    print('\n[19] every answer under /api/ is JSON, including the failures')
+    # Werkzeug default error page is HTML. A client that calls .json()
+    # on it gets a parse error instead of the reason it failed.
+    for path in ('/api/nope', '/api/risk/extra', '/api/congestion'):
+        r = requests.get(BASE + path, timeout=30)
+        try:
+            r.json()
+            parsed = True
+        except Exception:
+            parsed = False
+        check('GET %s answers JSON (HTTP %d)' % (path, r.status_code),
+              parsed, r.text[:60])
+    r = requests.get(BASE + '/api/predict', timeout=30)
+    check('a GET on the POST-only predict route is a JSON 405',
+          r.status_code == 405 and 'error' in r.json(), r.text[:60])
+
+    # A traversal attempt must not read a file, whichever way it is
+    # written. The plain form is normalised away before routing; the
+    # encoded form reaches the app and is refused by name.
+    r = requests.get(BASE + '/api/congestion/..%2f..%2fetc%2fpasswd',
+                     timeout=30)
+    check('an encoded traversal is refused as JSON, not served',
+          r.status_code == 404 and 'error' in r.json(), r.text[:70])
+    check('and nothing that looks like a file body comes back',
+          'root:' not in r.text and 'import ' not in r.text, r.text[:70])
+
+    # The browser-facing 404 should stay HTML - it is read by a person.
+    r = requests.get(BASE + '/nope', timeout=30)
+    check('a non-API 404 is still an HTML page for the browser',
+          'text/html' in r.headers.get('Content-Type', ''),
+          r.headers.get('Content-Type'))
+
     print('\n' + '=' * 62)
+    print('\n[15] /api/risk agrees with src/risk.py')
+    from src import risk
+    rk = requests.get(BASE + '/api/risk', timeout=90).json()
+    rows = rk['warnings']
+    check('the endpoint serves warnings', len(rows) > 0, rk)
+    check('counts add up to the warnings served',
+          sum(rk['counts'].values()) == len(rows), (rk['counts'], len(rows)))
+    for lvl in ('critical', 'warning', 'watch', 'clear'):
+        check('count of %r is recomputed correctly' % lvl,
+              rk['counts'][lvl] == sum(1 for w in rows if w['severity'] == lvl))
+    check('measured + context = total',
+          rk['measured'] + rk['context_only'] == len(rows),
+          (rk['measured'], rk['context_only'], len(rows)))
+    check('measured tally matches the flags on the rows',
+          rk['measured'] == sum(1 for w in rows if w['measured']))
+    check('the served halt threshold is the one src/risk.py measured at',
+          rk['gust_halt_kmh'] == risk.GUST_HALT_KMH,
+          (rk['gust_halt_kmh'], risk.GUST_HALT_KMH))
+
+    print('\n[16] the risk endpoint cannot invent evidence')
+    # The whole point of the panel is the measured/context split. If a
+    # berth or seasonal item ever ships as measured, someone has asserted
+    # an effect size this repository has not established.
+    bad = [w['title'] for w in rows
+           if w['kind'] in ('berth', 'seasonal') and w['measured']]
+    check('no berth or seasonal item claims to be measured', not bad, bad)
+    bad = [w['title'] for w in rows if not w.get('basis')]
+    check('every warning carries a basis string', not bad, bad[:3])
+    bad = [w['title'] for w in rows
+           if w['severity'] not in ('critical', 'warning', 'watch', 'clear')]
+    check('every severity is one of the four levels', not bad, bad[:3])
+    rank = {'critical': 0, 'warning': 1, 'watch': 2, 'clear': 3}
+    order = [rank[w['severity']] for w in rows]
+    check('warnings arrive worst-first so the panel renders in order',
+          order == sorted(order), order)
+    mdl = [w for w in rows if w['kind'] == 'model']
+    check('the model item is dated 2019, not today - it is historical',
+          all(w['as_of'].startswith('2019') for w in mdl),
+          [w.get('as_of') for w in mdl])
+
+    print('\n[17] the page renders the risk panel')
+    for hook in ('v-risk', 'riskList', 'riskCounts', 'riskClear',
+                 'loadRisk', 'riskRow', 'rkEsc', 'MEASURED', 'CONTEXT'):
+        check('page wires %r' % hook, hook in html)
+    check('nav offers the risk view', 'data-v="risk"' in html)
+    check('risk is in the view list so the hash route reaches it',
+          "VIEWS = ['timing','fleet','ports','risk','proof']" in html)
+    check('the panel explains the measured/context split in words',
+          'no measured effect' in html)
+
+    # A risk panel that fails once at page load and stays broken for the
+    # session is worse than one that says nothing - the user sees an
+    # outage and cannot retry it. The charts already recover this way.
+    check('a failed load is retried when the view is reopened',
+          'riskLoaded' in html and "name === 'risk' && !riskLoaded" in html)
+    check('severity is whitelisted before it reaches a class attribute',
+          'const sev = SEV_TAG[w.severity] ? w.severity' in html)
+    check('the "nothing raised" heading hides when that list is empty',
+          "riskClearHead').hidden = clear.length === 0" in html)
+
     if FAIL:
         print('  %d CHECK(S) FAILED:' % len(FAIL))
         for f in FAIL:
