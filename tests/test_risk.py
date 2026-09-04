@@ -354,6 +354,10 @@ def main():
 
         congestion.snapshot = broken
         congestion.monthly_profile = broken
+        # Hold the weather steady. This section is about congestion
+        # failing, and a live call here would let a network blip fail a
+        # test that has nothing to do with the network.
+        risk._forecast = fake_forecast([30, 32, 31])
         rows = risk.assess(['paradip'])
         gaps = [w for w in rows if w['kind'] == 'unavailable']
         titles = sorted(w['title'] for w in gaps)
@@ -373,6 +377,7 @@ def main():
     finally:
         congestion.snapshot = orig_snap
         congestion.monthly_profile = orig_prof
+        risk._forecast = orig
 
     print('\n[24] a missing model artefact is reported the same way')
     orig_exists = os.path.exists
