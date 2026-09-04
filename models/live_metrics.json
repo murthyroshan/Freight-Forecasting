@@ -1,0 +1,30 @@
+{
+  "zero": {
+    "rmse": 0.08125295785249652,
+    "skill_vs_zero_pct": 0.0,
+    "direction_pct": null
+  },
+  "momentum": {
+    "rmse": 0.08170291053388697,
+    "skill_vs_zero_pct": -0.5537677560086829,
+    "direction_pct": 46.558704453441294
+  },
+  "ridge": {
+    "rmse": 0.09035639191627895,
+    "skill_vs_zero_pct": -11.203818672433385,
+    "direction_pct": 45.26315789473684
+  },
+  "conformal": {
+    "target": 0.8,
+    "coverage": 0.7757085020242915,
+    "n": 1235
+  },
+  "n_scored": 1235,
+  "n_effective": 247,
+  "control_experiment": {
+    "capesize_lag1_autocorr": 0.6241930161122307,
+    "bdry_lag1_autocorr": 0.04749208407253497,
+    "proxy_has_skill": false,
+    "conclusion": "The Baltic index is a daily broker survey whose panellists anchor on the previous print, so its returns are strongly autocorrelated (+0.62) and forecastable. BDRY is a liquid arbitraged ETF over the same underlying; its returns are near-white (+0.05) and our model has -11.2% skill on it, i.e. none. Live deployment therefore needs SAIL's own Baltic licence rather than a free proxy."
+  }
+}
