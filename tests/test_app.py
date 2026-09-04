@@ -233,9 +233,15 @@ def main():
     # is invisible to every other check here - the page still returns
     # 200 and the HTML still contains all the right strings - but a panel
     # renders blank because the handler threw part-way through.
-    top = set(re.findall(r'\n {8}(?:const|let)\s+(\w+)\s*=', html)) | \
-        set(re.findall(r'\n {8}function\s+(\w+)\s*\(', html))
-    nested = set(re.findall(r'\n {12,}(?:const|let)\s+(\w+)\s*=', html))
+    # Top-level declarations begin at column 0 inside the script block;
+    # anything indented at all is inside a function. Keying on "indented
+    # or not" rather than a fixed depth keeps this working however the
+    # page is formatted — an earlier version assumed exactly 8 spaces and
+    # reported every function-local as a global the moment the markup was
+    # re-indented.
+    top = set(re.findall(r'\n(?:const|let)\s+(\w+)\s*=', html)) | \
+        set(re.findall(r'\n(?:async\s+)?function\s+(\w+)\s*\(', html))
+    nested = set(re.findall(r'\n[ \t]+(?:const|let)\s+(\w+)\s*=', html))
     shadowed = sorted(top & nested)
     check('no global helper is shadowed by a local of the same name',
           not shadowed,
