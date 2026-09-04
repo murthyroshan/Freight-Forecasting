@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 560" width="940" height="560"
      font-family="Inter, 'Segoe UI', system-ui, sans-serif" role="img"
-     aria-label="Data pipeline: Mendeley Baltic indices and Yahoo market data feed build_panel.py, which feeds train_model.py and metrics.json; IMF PortWatch feeds congestion.py; ports.py computes part-load capacity from physics; Open-Meteo history falsifies the seasonal story while its live forecast drives risk.py; all four reach the Flask dashboard. A MILP selection stage is not yet built.">
+     aria-label="Data pipeline: Mendeley Baltic indices and Yahoo market data feed build_panel.py, which feeds train_model.py and metrics.json; IMF PortWatch feeds congestion.py and ballast.py; ports.py computes part-load capacity from physics; Open-Meteo history falsifies the seasonal story while its live forecast drives risk.py; ports, congestion and ballast feed optimise.py, which selects vessels and berths by integer programming; all of it reaches the Flask dashboard.">
   <defs>
     <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0 0 L10 5 L0 10 z" fill="#8a8279"/>

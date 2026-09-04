@@ -63,20 +63,29 @@ largest edge is fold 7 — the Vale window, where the no-change RMSE blows out t
 ### Why ridge beats the gradient-boosted model
 
 Daily freight autocorrelation is ~0.99 and the five-day targets overlap, so
-1,682 rows is really about **202 effective observations**. A normally sized GBM
+1,682 rows is really about **336 effective windows**, and the 1,010 rows the
+model is actually scored on are about **202** — which is the figure the
+significance test uses, and the one `models/metrics.json` records as
+`n_effective`. A normally sized GBM
 memorises that instantly. The feature count is capped at 17 for the same reason.
 
 The significance test uses that smaller number too: 64.9% direction on ~202
-independent windows gives p < 0.0001. Computed on the 1,010 overlapping rows it
+independent windows gives p = 0.0003 — tested against the realised
+up-rate of 51.7% rather than a coin, and Bonferroni-adjusted over the three
+candidate models, since the model tested is the one chosen by this same score. Computed on the 1,010 overlapping rows it
 would be inflated roughly fivefold.
 
 ### Intervals
 
 Split-conformal residual quantiles, in the **locally weighted** variant — each
 residual scaled by a volatility estimate known at *t*, then rescaled on the test
-side. Plain split conformal gave **73.5%** coverage for a nominal 80%, because
+side. Plain split conformal gives **78.4%** coverage for a nominal 80%, because
 freight volatility clusters and one global quantile is too narrow in stressed
-regimes. The weighted form reaches **80.6%**.
+regimes. The weighted form reaches **82.0%**, at the cost of a mean interval
+36% wider (0.506 to 0.689). Both figures are produced by
+`walk_forward(..., conformal='plain'|'local')` on the same folds with the same
+finite-sample-corrected quantile, and both are written to `models/metrics.json`
+— neither is a number typed into this file.
 
 ---
 
@@ -133,7 +142,7 @@ and catch up after.
 ### But they cannot explain the season
 
 Paradip has had **7 such days in 8 years — 5 in May, 2 in November.** September
-to December contains 2 of them, affecting roughly 4 days out of ~970 in that
+to December contains 2 of them, affecting roughly 4 days out of 854 in that
 window: **0.4%**, against an observed shortfall of about **15%** of arrivals.
 Wrong by a factor of thirty.
 
@@ -173,16 +182,16 @@ published ranges for each class.
 
 | Class | Gangavaram | Vizag | Dhamra | Paradip | Gopalpur | Haldia |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Panamax | 79,500 | 79,500 | 79,500 | 79,500 | 79,500 | 41,740 |
-| Capesize | 176,500 | 175,401 | 174,302 | **152,320** | 135,834 | 68,435 |
-| Newcastlemax | 204,200 | 199,129 | 197,862 | **cannot** | 153,493 | 75,815 |
+| Panamax | 79,500 | 79,500 | 79,500 | 79,500 | 79,500 | 41,739 |
+| Capesize | 176,500 | 175,400 | 174,301 | **152,320** | 135,834 | 68,435 |
+| Newcastlemax | 204,200 | 199,129 | 197,861 | **cannot** | 153,493 | 75,814 |
 
 Newcastlemax is rejected from Paradip outright: 50.0 m beam against a 46.0 m
 limit, and no amount of part-loading makes a ship narrower.
 
 **Validation.** The model is given Paradip's *draft* and nothing about
 deadweight, yet its Capesize answer implies **155,820 DWT** against an
-independently documented berth limit of ~155,000 — within 0.5%.
+independently documented berth limit of ~155,000 — within 0.6%.
 
 ### Ranking on the right quantity
 
@@ -232,7 +241,8 @@ day, where one ship arriving or not swings a ratio by hundreds of percent. It is
 flagged `unreliable` with the reason stated.
 
 **Two tonnage figures per port.** Every Indian discharge port also loads: Paradip
-moves **189 kt/day across its quays but only 39 kt/day inbound** — 60% leaves as
+averages **59 kt/day inbound against 87 kt/day outbound** over the full record —
+60% leaves as
 iron ore, competing for the same berths. Against Paradip's call counts, imports
 alone correlate r = +0.620 and exports alone +0.751, but together **+0.898**. At
 the load end the distinction is starker still: Hay Point and Newcastle record

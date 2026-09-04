@@ -70,8 +70,23 @@ def main():
           not any(r['vessel'] == 'Newcastlemax' and r['port'] == 'Paradip'
                   for r in rs),
           ports.can_serve('Newcastlemax', 'Paradip')['verdict'])
-    check('capacities are the part-load figures, not deadweight',
-          all(r['cargo_t'] <= ports.VESSELS[r['vessel']]['dwt'] for r in rs))
+    # This check used to assert `cargo_t <= dwt`, under this same name.
+    # That is `dwt <= dwt` when the capacity IS the deadweight, so it
+    # passed happily while the optimiser was told a Capesize could put
+    # 180,000 t into Paradip's 16.0 m berth. Compare against the physics
+    # module itself, which is the only thing that settles it.
+    wrong = [(r['vessel'], r['port'], r['cargo_t'],
+              ports.can_serve(r['vessel'], r['port'])['max_cargo_t'])
+             for r in rs
+             if r['cargo_t'] != ports.can_serve(r['vessel'],
+                                                r['port'])['max_cargo_t']]
+    check('every route capacity is exactly what src/ports.py permits',
+          not wrong, wrong[:3])
+    partial = [r for r in rs
+               if r['cargo_t'] < ports.VESSELS[r['vessel']]['dwt']]
+    check('and %d of %d routes are genuinely part-load, so the check '
+          'above has something to bite on' % (len(partial), len(rs)),
+          len(partial) > 0)
 
     print('\n[2] the solver agrees with brute force, exactly')
     # Small enough to enumerate every fleet: 3 classes, 2 berths.
@@ -102,6 +117,15 @@ def main():
         check('parcel %s t: no leg carries more than its ships can lift'
               % f'{q:,}',
               all(l['tonnes'] <= l['capacity_t'] + 1e-6 for l in r['legs']))
+        # capacity_t is derived from the same cargo_t the solver used, so
+        # the line above is circular on its own. Anchor it to the physics.
+        bad = [(l['vessel'], l['port'], l['capacity_t'])
+               for l in r['legs']
+               if abs(l['capacity_t'] - l['voyages']
+                      * ports.can_serve(l['vessel'],
+                                        l['port'])['max_cargo_t']) > 1e-6]
+        check('parcel %s t: every leg capacity equals voyages x the '
+              'berth limit from src/ports.py' % f'{q:,}', not bad, bad[:2])
         check('parcel %s t: total is the sum of the legs' % f'{q:,}',
               abs(sum(l['cost'] for l in r['legs']) - r['total_cost']) < 0.01)
         check('parcel %s t: cost per tonne is total over parcel' % f'{q:,}',

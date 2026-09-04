@@ -32,6 +32,16 @@ import numpy as np
 import pandas as pd
 from flask import Flask, request, jsonify, Response
 
+# .env.example tells the reader to copy it to .env and edit. That only
+# works if something loads the file: python-dotenv was in
+# requirements.txt but imported nowhere, so PORT, HOST and FLASK_DEBUG
+# were silently ignored unless exported by hand.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:                     # optional; env vars still work
+    pass
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src import (paths, ports, congestion, risk, optimise,  # noqa: E402
                  ballast)
@@ -44,6 +54,12 @@ OOS_PATH = os.path.join(paths.PROCESSED, 'oos_predictions.parquet')
 
 MISSING = ('Artefact %s is missing. Run:  python -m src.fetch_data && '
            'python -m src.build_panel && python -m src.train_model')
+
+# The control experiment comes from a different script, and pointing the
+# reader at train_model would have them run the wrong one and see no
+# change.
+MISSING_LIVE = ('Artefact %s is missing. Run:  python -m src.fetch_data && '
+                'python -m src.live_model')
 
 
 def _load_json(path):
@@ -73,6 +89,28 @@ def _finite(value):
     return f if math.isfinite(f) else None
 
 
+def _number(value, name, lo=None, hi=None):
+    """Parse a JSON value as a finite number, or raise ValueError.
+
+    Booleans are refused before float() sees them: `float(True)` is 1.0,
+    so `parcel_t: true` would otherwise be answered, with a straight
+    face, as a one-tonne parcel costing $620,000 a tonne.
+    """
+    if isinstance(value, bool):
+        raise ValueError("'%s' must be a number, not a boolean" % name)
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise ValueError("'%s' must be a number, got %r" % (name, value))
+    if not math.isfinite(v):
+        raise ValueError("'%s' must be finite, got %r" % (name, value))
+    if lo is not None and v < lo:
+        raise ValueError("'%s' must be >= %s, got %r" % (name, lo, value))
+    if hi is not None and v > hi:
+        raise ValueError("'%s' must be <= %s, got %r" % (name, hi, value))
+    return v
+
+
 def _json_safe(obj):
     """_finite, applied through a whole nested payload.
 
@@ -86,7 +124,13 @@ def _json_safe(obj):
         return [_json_safe(v) for v in obj]
     if isinstance(obj, bool) or obj is None or isinstance(obj, str):
         return obj
-    if isinstance(obj, (int, float)) or hasattr(obj, 'dtype'):
+    # A Python int is always finite and always JSON-safe. Sending it
+    # through _finite() would return a float, turning 1010 into 1010.0 -
+    # which is the same number but not the same payload, and tests/
+    # test_app.py compares the served bytes against the artefact.
+    if isinstance(obj, int):
+        return obj
+    if isinstance(obj, float) or hasattr(obj, 'dtype'):
         return _finite(obj)
     return obj
 
@@ -114,6 +158,32 @@ DASHBOARD = os.path.join(paths.TEMPLATES, 'dashboard.html')
 # browser that is right; for /api/* it means a client calling .json() on
 # the response gets a parse error instead of the reason. Keep every
 # answer under /api/ in the same format as the successful ones.
+def _body():
+    """The JSON body as a dict, or a ready-made 400.
+
+    `request.json or {}` only rescues a FALSY body - null, {}, [], 0, "".
+    A truthy non-dict such as [1,2,3] sails through and raises
+    AttributeError on the first .get(), which the caller sees as a 500.
+    """
+    # Keep the three failures distinct: a body sent as the wrong media
+    # type is 415, a body that is not valid JSON is 400, and a body that
+    # parses to something other than an object is 400 with a different
+    # reason. Collapsing them loses information the caller needs.
+    if request.content_length and not request.is_json:
+        return None, (jsonify({
+            'error': 'send Content-Type: application/json, got %r'
+                     % (request.content_type or 'nothing')}), 415)
+    data = request.get_json(silent=True)
+    if data is None:
+        if request.content_length:
+            return None, (jsonify({'error': 'body is not valid JSON'}), 400)
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({'error': 'request body must be a JSON '
+                               'object, got %s' % type(data).__name__}), 400)
+    return data, None
+
+
 def _api_error(exc, code, message):
     if request.path.startswith('/api/'):
         return jsonify({'error': message, 'path': request.path}), code
@@ -128,6 +198,20 @@ def _not_found(exc):
 @app.errorhandler(405)
 def _bad_method(exc):
     return _api_error(exc, 405, 'method not allowed for this endpoint')
+
+
+@app.errorhandler(400)
+def _bad_request(exc):
+    # Werkzeug raises this itself for an unparseable JSON body, before
+    # any view runs. The page puts `await r.json()` inside its network
+    # try block, so an HTML body here surfaces to the user as "backend
+    # unreachable" while the server is up and answering.
+    return _api_error(exc, 400, 'malformed request body')
+
+
+@app.errorhandler(415)
+def _bad_media_type(exc):
+    return _api_error(exc, 415, 'send Content-Type: application/json')
 
 
 @app.errorhandler(500)
@@ -149,7 +233,7 @@ def api_metrics():
     """Validated performance. Straight from train_model.py's output."""
     if METRICS is None:
         return jsonify({'error': MISSING % METRICS_PATH}), 503
-    return jsonify(METRICS)
+    return jsonify(_json_safe(METRICS))
 
 
 @app.route('/api/control')
@@ -158,12 +242,12 @@ def api_control():
     could stand in for the licensed Baltic feed, and it cannot. Shown
     in the UI because a model that is never falsified is not evidence."""
     if LIVE is None:
-        return jsonify({'error': MISSING % LIVE_PATH}), 503
-    return jsonify({
+        return jsonify({'error': MISSING_LIVE % LIVE_PATH}), 503
+    return jsonify(_json_safe({
         'bdry': {k: LIVE[k] for k in ('zero', 'momentum', 'ridge')},
         'control_experiment': LIVE.get('control_experiment'),
         'n_effective': LIVE.get('n_effective'),
-    })
+    }))
 
 
 @app.route('/api/ports')
@@ -221,17 +305,15 @@ def api_port_options():
     which would call a Capesize and a Newcastlemax equally good and quietly
     recommend the more expensive one.
     """
-    data = request.json or {}
-    raw = data.get('parcel_t')
-    if raw is None:
+    data, err = _body()
+    if err:
+        return err
+    if data.get('parcel_t') is None:
         return jsonify({'error': "'parcel_t' is required"}), 400
     try:
-        parcel = float(raw)
-    except (TypeError, ValueError):
-        return jsonify({'error': "'parcel_t' must be a number, got %r"
-                        % (raw,)}), 400
-    if not math.isfinite(parcel):
-        return jsonify({'error': "'parcel_t' must be finite"}), 400
+        parcel = _number(data['parcel_t'], 'parcel_t')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
     if parcel <= 0:
         return jsonify({'error': "'parcel_t' must be greater than 0"}), 400
     if parcel > 5e6:
@@ -290,7 +372,9 @@ def api_optimise():
     repository has no verified freight, lighterage or haulage figures for
     this lane, so it asks rather than assumes, and the answer says so.
     """
-    data = request.json or {}
+    data, err = _body()
+    if err:
+        return err
 
     def _money(obj, name):
         if obj is None:
@@ -301,24 +385,13 @@ def api_optimise():
         for k, v in obj.items():
             if v is None or v == '':
                 continue
-            try:
-                f = float(v)
-            except (TypeError, ValueError):
-                raise ValueError('%s[%s] must be a number, got %r'
-                                 % (name, k, v))
-            if not math.isfinite(f) or f < 0:
-                raise ValueError('%s[%s] must be a non-negative finite '
-                                 'number, got %r' % (name, k, v))
-            out[k] = f
+            out[k] = _number(v, '%s[%s]' % (name, k), lo=0.0)
         return out
 
     try:
-        parcel = data.get('parcel_t')
-        if parcel is None:
+        if data.get('parcel_t') is None:
             raise ValueError("'parcel_t' is required")
-        parcel = float(parcel)
-        if not math.isfinite(parcel) or parcel < 1:
-            raise ValueError("'parcel_t' must be at least 1 tonne")
+        parcel = _number(data['parcel_t'], 'parcel_t', lo=1.0)
         voyage = _money(data.get('voyage_cost'), 'voyage_cost') or {}
         if not voyage:
             raise ValueError("'voyage_cost' is required - this project has "
@@ -342,7 +415,7 @@ def api_optimise():
         if ballast_pct not in (None, ''):
             penalty, shares = ballast.ballast_penalty(voyage, ballast_pct)
             kw['ballast_cost'] = penalty
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         return jsonify({'error': str(exc)}), 400
 
     try:
@@ -391,6 +464,10 @@ def api_congestion():
         'discharge': [s for s in snaps if s.get('role') == 'discharge'],
         'load': [s for s in snaps if s.get('role') == 'load'],
         'monthly_profile': profiles,
+        # Computed, not typed. The page used to hardcode "-88%" and
+        # "p < 0.0001" beside a literal "90 km/h", which is exactly the
+        # thing this project says it never does.
+        'cyclone_effect': congestion.cyclone_effect(),
         'window_days': congestion.WINDOW,
         'bands': [{'below_percentile': None if c == float('inf') else c,
                    'label': n} for c, n in congestion.BANDS],
@@ -498,24 +575,16 @@ def api_predict():
     if not READY:
         return jsonify({'error': MISSING % OOS_PATH}), 503
 
-    data = request.json or {}
+    data, err = _body()
+    if err:
+        return err
 
     def _num(name, required=True, default=None, lo=None, hi=None):
-        if name not in data or data[name] is None:
+        if data.get(name) is None:
             if required:
                 raise ValueError("'%s' is required" % name)
             return default
-        try:
-            v = float(data[name])
-        except (TypeError, ValueError):
-            raise ValueError("'%s' must be a number, got %r" % (name, data[name]))
-        if v != v or v in (float('inf'), float('-inf')):
-            raise ValueError("'%s' must be finite" % name)
-        if lo is not None and v < lo:
-            raise ValueError("'%s' must be >= %s" % (name, lo))
-        if hi is not None and v > hi:
-            raise ValueError("'%s' must be <= %s" % (name, hi))
-        return v
+        return _number(data[name], name, lo, hi)
 
     try:
         current_rate = _num('current_rate', lo=0.01, hi=1e6)
@@ -525,9 +594,15 @@ def api_predict():
 
     # Which out-of-sample date are we standing on?
     raw = data.get('date')
-    if raw:
+    if raw is not None and raw != '':
         try:
-            when = pd.Timestamp(str(raw)).normalize()
+            when = pd.Timestamp(str(raw))
+            # A browser sends new Date().toISOString(), which is
+            # tz-aware. Comparing that against this tz-naive index
+            # raises two lines below - outside any handler, as a 500.
+            if when.tzinfo is not None:
+                when = when.tz_convert(None)
+            when = when.normalize()
         except Exception:
             return jsonify({'error': "'date' must be YYYY-MM-DD, got %r"
                             % raw}), 400

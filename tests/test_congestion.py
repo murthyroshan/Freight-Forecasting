@@ -309,6 +309,38 @@ def main():
     check('every value is JSON-safe (no NaN)',
           all(np.isfinite(r['smoothed']) for r in s))
 
+    print('\n[6c] the cyclone effect is COMPUTED, not quoted')
+    # The dashboard used to type "-88%" and "p < 0.0001" into its markup
+    # beside a literal "90 km/h". Those now come from here, so they get
+    # asserted like any other served number.
+    ce = C.cyclone_effect()
+    check('cyclone_effect returns a result for paradip', ce is not None)
+    if ce:
+        check('the threshold it reports is the one it was asked for',
+              ce['gust_kmh'] == 90.0, ce['gust_kmh'])
+        check('storm days really do halt arrivals (%.2f vs %.2f, %+.0f%%)'
+              % (ce['storm_calls_per_day'], ce['normal_calls_per_day'],
+                 ce['change_pct']),
+              ce['change_pct'] < -50, ce['change_pct'])
+        check('and the drop is significant (p = %.1e)' % ce['p_value'],
+              ce['p_value'] is not None and ce['p_value'] < 1e-4,
+              ce['p_value'])
+        check('storm days are counted, and they are rare (%d in %d days)'
+              % (ce['gust_days'], ce['window_days']),
+              0 < ce['gust_days'] < ce['window_days'] * 0.01, ce)
+        check('most fall in May (%d), not Sep-Dec (%d) - which is why '
+              'they cannot explain the autumn dip'
+              % (ce['gust_days_may'], ce['gust_days_sep_dec']),
+              ce['gust_days_may'] > ce['gust_days_sep_dec'], ce)
+        check('the Sep-Dec share is a fraction of a percent (%.2f%%)'
+              % (100.0 * ce['gust_days_sep_dec'] / ce['sep_dec_days']),
+              ce['gust_days_sep_dec'] / ce['sep_dec_days'] < 0.01)
+        check('a raised threshold finds strictly fewer storm days',
+              (C.cyclone_effect(gust_kmh=120.0) or {}).get('gust_days', 0)
+              < ce['gust_days'])
+    check('a port with no weather history returns None, not a guess',
+          C.cyclone_effect(port='newcastle') is None)
+
     print('\n' + '=' * 62)
     if FAIL:
         print('  %d FAILED:' % len(FAIL))

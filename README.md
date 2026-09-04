@@ -6,7 +6,7 @@ berth, for coking coal imported to the east coast of India.
 Smart India Hackathon 2026 · Problem statement **SIH26006** · Ministry of Steel
 
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org)
-[![Tests 448](https://img.shields.io/badge/tests-448%20passing-2ea44f)](#testing)
+[![Tests 540](https://img.shields.io/badge/tests-540%20passing-2ea44f)](#testing)
 
 ---
 
@@ -65,8 +65,9 @@ eight folds, five-day purge gap between train and test.
 | **ridge** | **0.2285** | **+7.5%** | **64.9%** |
 | LightGBM | 0.2330 | +5.7% | 60.3% |
 
-Beats the baseline in **6 of 8** folds. Conformal intervals reach **80.6%**
-coverage against an 80% target. Direction is significant at **p < 0.0001**,
+Beats the baseline in **6 of 8** folds. Conformal intervals reach **82.0%**
+coverage against an 80% target — against **78.4%** for the same intervals without
+volatility scaling, on the same folds. Direction is significant at **p = 0.0003**,
 computed on the ~202 *independent* windows rather than the 1,010 overlapping
 rows.
 
@@ -92,8 +93,12 @@ prices that into the rate before you negotiate. Haldia ships out **2.5 kt/day**
 against **44.8** in — a ratio of 0.06 that has never exceeded 0.2 in eight years,
 so **94%** of arriving tonnage leaves empty. Paradip runs **1.46** and has been
 above parity every year. Priced into the optimiser at 45% of a laden voyage,
-Haldia gets **30% dearer** and Paradip does not move — which is why Paradip wins
-even though its 16.0 m berth forces a Capesize to sail part-laden.
+Haldia gets roughly **30% dearer** and Paradip does not move at all. On the
+dashboard's own default costs that is enough to make Paradip the cheapest berth
+despite its 16.0 m draft forcing a Capesize to sail part-laden — the part-load
+penalty is smaller than the empty-leg penalty. The exact figure moves with the
+costs you enter, which is the point: the imbalance is measured, the money is
+yours.
 
 > **The costs are yours, not ours.** This repository has no verified freight,
 > lighterage or haulage figures for this lane. They are required arguments with
@@ -106,12 +111,12 @@ even though its 16.0 m berth forces a Capesize to sail part-laden.
 
 ## 🧭 How it is built
 
-![Pipeline: Mendeley Baltic indices and Yahoo market data feed build_panel.py then train_model.py; IMF PortWatch feeds congestion.py; ports.py derives part-load capacity from physics; all three reach the Flask dashboard. A MILP selection stage is not yet built.](assets/pipeline.svg)
+![Pipeline: Mendeley Baltic indices and Yahoo market data feed build_panel.py then train_model.py; IMF PortWatch feeds congestion.py and ballast.py; ports.py derives part-load capacity from physics; Open-Meteo history falsifies the seasonal story while its live forecast drives risk.py; ports, congestion and ballast feed the optimise.py fleet selection, and all of it reaches the Flask dashboard.](assets/pipeline.svg)
 
 | Path | Purpose |
 | :--- | :--- |
 | `app.py` | Flask API. Serves artefacts, computes nothing. |
-| `templates/dashboard.html` | Four-view dashboard; every number arrives via `fetch()`. |
+| `templates/dashboard.html` | Five-view dashboard; every number arrives via `fetch()`. |
 | `src/fetch_data.py` | Baltic + Yahoo + PortWatch + Open-Meteo → `data/raw` |
 | `src/build_panel.py` | Features and the target definition. |
 | `src/train_model.py` | **Module A** — Capesize direction, walk-forward. |
@@ -121,7 +126,7 @@ even though its 16.0 m berth forces a Capesize to sail part-laden.
 | `src/risk.py` | **Module B** — risk warnings, measured and otherwise. |
 | `src/optimise.py` | **Module B** — which ships into which berths (MILP). |
 | `src/ballast.py` | **Module B** — the empty return leg. |
-| `tests/` | 448 checks. See [Testing](#testing). |
+| `tests/` | 540 checks. See [Testing](#testing). |
 
 ## ⚖️ The rule this repository runs on
 
@@ -148,14 +153,20 @@ the *calmest* months of the year. Both experiments are written up in
 ## 🧪 Testing
 
 ```bash
-python -m tests.test_leakage     #   8 · features cannot see the future
-python -m tests.test_ports       #  54 · part-load physics
-python -m tests.test_congestion  #  50 · activity signal and its guards
-python -m tests.test_risk        #  80 · thresholds, and evidence claims
-python -m tests.test_optimise    #  56 · selection, against brute force
-python -m tests.test_ballast     #  43 · the empty leg, and its limits
-python -m tests.test_app         # 157 · every API claim, recomputed
+python -m tests.test_leakage       #   8 · features cannot see the future
+python -m tests.test_walkforward   #  71 · the purge gap and the headline claims
+python -m tests.test_ports         #  54 · part-load physics
+python -m tests.test_congestion    #  59 · activity signal and its guards
+python -m tests.test_risk          #  86 · thresholds, and evidence claims
+python -m tests.test_optimise      #  62 · selection, against brute force
+python -m tests.test_ballast       #  43 · the empty leg, and its limits
+python -m tests.test_app           # 157 · every API claim, recomputed
 ```
+
+`test_walkforward.py` exists because a mutation test found that inverting the
+purge gap — so the training window overlapped the test window — left every other
+suite green. It asserts the fold boundaries directly, and checks coverage and
+skill against their *targets* rather than only against what `metrics.json` says.
 
 `test_leakage.py` corrupts every raw input after a cut date, rebuilds the panel
 and requires all earlier features to be bit-identical — catching a centred

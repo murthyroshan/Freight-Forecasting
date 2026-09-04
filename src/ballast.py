@@ -27,9 +27,11 @@ freight offered, before any negotiation happens.
 WHAT IS MEASURED, AND WHAT IS NOT
 
 Measured: the share of inbound dry bulk tonnage a port cannot match with
-outbound dry bulk tonnage. At Haldia that is over 90% and has been every
-year since 2019; at Paradip it is zero, because more dry bulk leaves than
-arrives.
+outbound dry bulk tonnage. Over the last two years that is 94% at Haldia,
+which has never once shipped out as much dry bulk as it took in; at
+Paradip it is zero, because more leaves than arrives, every year since
+2019. (Haldia's ANNUAL empty share ranges 76% to 96% - the 94% is the
+730-day window, not a floor on the individual years.)
 
 Not measured: whether a particular ship can take a particular export
 cargo. Hold cleanliness, parcel size and timing all intervene, so
@@ -78,6 +80,12 @@ MIN_IMPORT_T_PER_DAY = min(v['dwt'] - v['constants']
 # answer look tidy.
 PARITY = 1.0
 
+# The tonnage floor above is a RATE, and a rate passes on one day as
+# easily as on seven hundred. A quarter is the shortest span over which
+# a berth's in/out balance means anything - below it the ratio is a
+# handful of arrivals, not a property of the berth.
+MIN_DAYS = 90
+
 
 def _smallest_class():
     return min(ports.VESSELS,
@@ -123,6 +131,15 @@ def imbalance(port, as_of=None, window=WINDOW_DAYS):
     }
 
     per_day = imp / days
+    if days < MIN_DAYS:
+        out.update({
+            'reliable': False, 'ratio': None, 'ballast_share': None,
+            'verdict': 'not scored',
+            'note': ('only %d days of history at this as_of; %d are needed '
+                     'before an imbalance is a rate rather than a handful '
+                     'of arrivals' % (days, MIN_DAYS)),
+        })
+        return out
     if per_day < MIN_IMPORT_T_PER_DAY or imp <= 0:
         out.update({
             'reliable': False,
@@ -138,7 +155,7 @@ def imbalance(port, as_of=None, window=WINDOW_DAYS):
 
     ratio = exp / imp
     share = max(0.0, 1.0 - ratio)
-    st = stability(port, as_of)
+    st = stability(port, as_of, window)
     out.update({
         'reliable': True,
         'ratio': round(ratio, 3),
@@ -149,7 +166,10 @@ def imbalance(port, as_of=None, window=WINDOW_DAYS):
         # Scored is not the same as stable. A berth whose annual ratio
         # crosses parity says one thing some years and the opposite in
         # others, and should not be priced as though it were settled.
-        'stable': not st['crosses_parity'],
+        # crosses_parity is None when there is nothing to judge, and
+        # `not None` is True - so an unknown would have reported as
+        # settled. Unknown is not stable.
+        'stable': st['crosses_parity'] is False,
         'note': ('%.0f%% of inbound dry bulk tonnage has no outbound dry '
                  'bulk to match it%s'
                  % (share * 100,
@@ -161,14 +181,18 @@ def imbalance(port, as_of=None, window=WINDOW_DAYS):
     return out
 
 
-def stability(port, as_of=None):
+def stability(port, as_of=None, window=None):
     """The same ratio year by year.
 
     A structural property of a berth is worth acting on; a ratio that
     wanders is not. This is what separates the two.
+
+    `window` must match the one the caller scored over. Without it a
+    thirty-day ratio was being annotated with an eight-year parity
+    judgement and an eight-year min/max range.
     """
-    d = congestion.load(port)
-    if as_of is not None:
+    d = _series(port, as_of, window) if window else congestion.load(port)
+    if window is None and as_of is not None:
         d = d[d.index <= pd.Timestamp(as_of)]
     by = {}
     for y, g in d.groupby(d.index.year):
@@ -236,10 +260,15 @@ def ballast_penalty(voyage_cost, ballast_pct, as_of=None,
     A berth with a return cargo adds nothing. An unscored berth also adds
     nothing, because guessing there would be inventing a number.
     """
+    if isinstance(ballast_pct, bool):
+        raise ValueError('ballast_pct must be a number, not a boolean')
     try:
         pct = float(ballast_pct)
     except (TypeError, ValueError):
         raise ValueError('ballast_pct must be a number, got %r'
+                         % (ballast_pct,))
+    if pct != pct:
+        raise ValueError('ballast_pct must be finite, got %r'
                          % (ballast_pct,))
     if not 0.0 <= pct <= 1.0:
         raise ValueError('ballast_pct is a fraction of a laden voyage and '

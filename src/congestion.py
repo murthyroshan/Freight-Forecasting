@@ -165,7 +165,69 @@ def load(port):
     return pd.read_parquet(p).set_index('date').sort_index()
 
 
+def cyclone_effect(port='paradip', gust_kmh=90.0, since='2019-01-01'):
+    """The measured effect of a cyclone-force gust on arrivals.
+
+    Computed rather than quoted. The dashboard used to type "-88%" and
+    "p < 0.0001" straight into its markup, which is the one thing this
+    project says it never does - and the threshold beside them was a
+    literal that could drift away from the constant it described.
+
+    Returns None when the weather history for `port` is not present.
+    """
+    wxp = os.path.join(paths.RAW, 'wx_%s.parquet' % port)
+    if not os.path.exists(wxp):
+        return None
+    wx = pd.read_parquet(wxp)
+    wx['date'] = pd.to_datetime(wx['date'])
+    wx = wx.set_index('date')
+    wx = wx[wx.index >= pd.Timestamp(since)]
+    j = pd.concat([load(port)['portcalls_dry_bulk'], wx['gust_max']],
+                  axis=1).dropna()
+    if j.empty:
+        return None
+
+    # The storm window is the gust day and the day before it: a master
+    # stops for weather he can see coming, not only weather he is in.
+    storm = set()
+    for t in j.index[j['gust_max'] >= gust_kmh]:
+        storm.add(t)
+        storm.add(t - pd.Timedelta(days=1))
+    m = j.index.isin(sorted(storm))
+    if not m.any() or m.all():
+        return None
+    a = j['portcalls_dry_bulk'][m].to_numpy(dtype=float)
+    b = j['portcalls_dry_bulk'][~m].to_numpy(dtype=float)
+    try:
+        from scipy import stats as _st
+        p_value = float(_st.mannwhitneyu(a, b, alternative='less').pvalue)
+    except Exception:
+        p_value = None
+
+    gust_days = int((j['gust_max'] >= gust_kmh).sum())
+    months = j.index[j['gust_max'] >= gust_kmh].month
+    return {
+        'port': port,
+        'gust_kmh': float(gust_kmh),
+        'since': since,
+        'storm_calls_per_day': round(float(a.mean()), 3),
+        'normal_calls_per_day': round(float(b.mean()), 3),
+        'change_pct': round(100.0 * (a.mean() / b.mean() - 1.0), 1),
+        'p_value': p_value,
+        'gust_days': gust_days,
+        'gust_days_may': int((months == 5).sum()),
+        'gust_days_sep_dec': int(months.isin([9, 10, 11, 12]).sum()),
+        'window_days': int(len(j)),
+        'sep_dec_days': int(j.index.month.isin([9, 10, 11, 12]).sum()),
+    }
+
+
 def band(percentile):
+    if percentile is None or percentile != percentile:
+        raise ValueError('percentile must be a number, got %r'
+                         % (percentile,))
+    if not 0.0 <= percentile <= 100.0:
+        raise ValueError('percentile must be 0-100, got %r' % (percentile,))
     for cut, name in BANDS:
         if percentile < cut:
             return name

@@ -142,21 +142,34 @@ def solve(parcel_t, voyage_cost, port_cost=None, lighterage_cost=None,
     ic = {p: _finite(inland_cost.get(p, 0.0), 'inland_cost[%s]' % p)
           for p in {r['port'] for r in rs}}
     ballast_cost = ballast_cost or {}
-    # A None here means the empty leg at that berth was never measured,
+    # A None here means the empty leg on THAT ROUTE was never measured,
     # which is different from measured-and-zero. It costs nothing in the
     # objective - we will not invent a figure - but the answer says so,
     # otherwise an unmeasured berth looks cheaper than a known-good one
     # purely because nobody has data on it.
+    #
+    # Tracked per (vessel, port), not per port. Keying it by port alone
+    # let one class with a gap mark every other class at that berth as
+    # unpriced, and - the dangerous direction - let a class ABSENT from
+    # ballast_cost default to 0.0 and be reported as priced. When
+    # ballast_cost is supplied at all, a route it does not mention is
+    # unmeasured, not free.
     bc, unpriced = {}, set()
     for r in rs:
-        row = ballast_cost.get(r['vessel']) or {}
-        raw = row.get(r['port'], 0.0)
-        if raw is None:
-            bc[(r['vessel'], r['port'])] = 0.0
-            unpriced.add(r['port'])
+        key = (r['vessel'], r['port'])
+        row = ballast_cost.get(r['vessel'])
+        if row is None:
+            raw = None if ballast_cost else 0.0
+        elif not isinstance(row, dict):
+            raise ValueError('ballast_cost[%s] must be an object keyed by '
+                             'berth, got %r' % (r['vessel'], row))
         else:
-            bc[(r['vessel'], r['port'])] = _finite(
-                raw, 'ballast_cost[%s][%s]' % (r['vessel'], r['port']))
+            raw = row.get(r['port'], None)
+        if raw is None:
+            bc[key] = 0.0
+            unpriced.add(key)
+        else:
+            bc[key] = _finite(raw, 'ballast_cost[%s][%s]' % key)
 
     n = len(rs)
     # x = [voyages_0..voyages_n-1, tonnes_0..tonnes_n-1]
@@ -186,10 +199,16 @@ def solve(parcel_t, voyage_cost, port_cost=None, lighterage_cost=None,
     cons.append(LinearConstraint(a, -np.inf, 0.0))
 
     # 3. a berth can only take so many calls
+    known = {r['port'] for r in rs}
+    unknown = [p for p in max_calls if p not in known]
+    if unknown:
+        raise ValueError('max_calls names %s, which %s no workable route '
+                         'here; known berths are %s'
+                         % (', '.join(map(repr, sorted(unknown))),
+                            'have' if len(unknown) > 1 else 'has',
+                            ', '.join(sorted(known))))
     for p, cap in max_calls.items():
         idx = [i for i, r in enumerate(rs) if r['port'] == p]
-        if not idx:
-            continue
         a = np.zeros(2 * n)
         a[idx] = 1.0
         cons.append(LinearConstraint(a, 0, _finite(cap,
@@ -231,7 +250,7 @@ def solve(parcel_t, voyage_cost, port_cost=None, lighterage_cost=None,
             'verdict': r['verdict'],
             'binding': r['binding'],
             'ballast_cost': round(v * bc[(r['vessel'], r['port'])], 2),
-            'ballast_priced': r['port'] not in unpriced,
+            'ballast_priced': (r['vessel'], r['port']) not in unpriced,
             'cost': round(v * per_voyage + t * per_tonne, 2),
             'cost_per_t': round((v * per_voyage + t * per_tonne) / t, 2),
         })
@@ -269,6 +288,10 @@ def compare(parcel_t, voyage_cost, **kw):
     the unconstrained optimum against each single-class fleet, which is
     how the decision is usually made.
     """
+    if 'vessels' in kw:
+        raise TypeError('compare() scores each class in turn and sets '
+                        '`vessels` itself; call solve() directly to '
+                        'restrict the fleet')
     best = solve(parcel_t, voyage_cost, **kw)
     rows = []
     for v in sorted(ports.VESSELS):
