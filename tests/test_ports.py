@@ -231,6 +231,47 @@ def main():
                             % (vessel, port, shown, exact))
     check('no combination over-reports its capacity', not over, over)
 
+    print('\na non-finite density is refused, not quietly propagated')
+    # `density <= 0` is False for NaN, so a bare sign test lets a NaN
+    # through and it comes out the far end as a NaN TPC, a NaN allowance
+    # and finally a NaN tonnage on screen.
+    for bad in (0.0, -1.0, float('nan'), float('inf'), float('-inf'),
+                None, 'x'):
+        for fn, nm in ((ports.tpc, 'tpc'),
+                       (ports.dock_water_allowance, 'dock_water_allowance')):
+            try:
+                v = fn('Capesize', bad)
+                check('%s(density=%r) refused' % (nm, bad), False,
+                      'returned %r' % (v,))
+            except (ValueError, TypeError):
+                check('%s(density=%r) refused' % (nm, bad), True)
+    check('and a normal density still works: tpc = %.2f'
+          % ports.tpc('Capesize'), abs(ports.tpc('Capesize') - 109.91) < 0.01)
+
+    print('\nthe bridge to the lowercase modules is complete both ways')
+    # ports.py names ports for display; congestion.py and risk.py key
+    # them in lowercase. The MILP has to join the two, and a join that
+    # guesses at case fails silently on whichever spelling differs.
+    from src import congestion
+    missing = [p for p in ports.PORTS if p not in ports.PORTWATCH_KEY]
+    check('every port in PORTS has an entry in PORTWATCH_KEY',
+          not missing, missing)
+    extra = [p for p in ports.PORTWATCH_KEY if p not in ports.PORTS]
+    check('and PORTWATCH_KEY invents no ports of its own', not extra, extra)
+    mapped = set(v for v in ports.PORTWATCH_KEY.values() if v)
+    check('every discharge port congestion.py tracks is reachable from here',
+          mapped == set(congestion.DISCHARGE),
+          mapped ^ set(congestion.DISCHARGE))
+    unfed = sorted(p for p, v in ports.PORTWATCH_KEY.items() if v is None)
+    check('berths with no PortWatch feed map to None rather than being '
+          'left out: %s' % unfed,
+          all(ports.portwatch_key(p) is None for p in unfed))
+    try:
+        ports.portwatch_key('Atlantis')
+        check('portwatch_key refuses an unknown port', False, 'accepted')
+    except KeyError:
+        check('portwatch_key refuses an unknown port', True)
+
     print('\n' + '=' * 62)
     if FAIL:
         print('  %d FAILED:' % len(FAIL))

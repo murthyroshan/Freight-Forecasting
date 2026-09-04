@@ -6,7 +6,7 @@ berth, for coking coal imported to the east coast of India.
 Smart India Hackathon 2026 · Problem statement **SIH26006** · Ministry of Steel
 
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org)
-[![Tests 162](https://img.shields.io/badge/tests-162%20passing-2ea44f)](#testing)
+[![Tests 300](https://img.shields.io/badge/tests-300%20passing-2ea44f)](#testing)
 
 ---
 
@@ -20,13 +20,15 @@ our sample; a week's timing moves lakhs per parcel.
 berth is 16.0 m and a laden Capesize draws 18.2 m — so it sails part-laden, and
 how much cargo it can carry is a calculation, not a yes/no.
 
-The dashboard answers both, in four views:
+A third question sits under both — what could stop the ship this week. The
+dashboard answers all three, in five views:
 
 | View | Answers |
 | :--- | :--- |
 | **Charter timing** | Fix now or wait? Shows the forecast *and* what actually happened. |
 | **Vessel & port** | Which class, into which berth, and how much cargo it can lift. |
 | **Port activity** | How busy every berth is this week, both ends of the lane. |
+| **Risk** | What could go wrong in the next ten days — and which warnings have a measured effect behind them. |
 | **Validation** | Every fold, including the ones we lose. |
 
 ## ⚙️ Quick start
@@ -42,7 +44,7 @@ pip install -r requirements.txt
 No API keys. Every data source is free and keyless.
 
 ```bash
-python -m src.fetch_data      # 28 parquet files  (~3 min first run)
+python -m src.fetch_data      # 29 parquet files  (~3 min first run)
 python -m src.build_panel     # 1,682 rows × 17 features
 python -m src.train_model     # walk-forward evaluation
 python -m src.live_model      # the control experiment
@@ -92,7 +94,8 @@ the only current data in the system, since the Baltic history ends 2019-07-31.
 | `src/live_model.py` | The BDRY control experiment. |
 | `src/ports.py` | **Module B** — port constraints and part-load capacity. |
 | `src/congestion.py` | **Module B** — live port activity. |
-| `tests/` | 162 checks. See [Testing](#testing). |
+| `src/risk.py` | **Module B** — risk warnings, measured and otherwise. |
+| `tests/` | 300 checks. See [Testing](#testing). |
 
 ## ⚖️ The rule this repository runs on
 
@@ -120,15 +123,19 @@ the *calmest* months of the year. Both experiments are written up in
 
 ```bash
 python -m tests.test_leakage     #   8 · features cannot see the future
-python -m tests.test_ports       #  34 · part-load physics
+python -m tests.test_ports       #  54 · part-load physics
 python -m tests.test_congestion  #  50 · activity signal and its guards
-python -m tests.test_app         #  70 · every API claim, recomputed
+python -m tests.test_risk        #  80 · thresholds, and evidence claims
+python -m tests.test_app         # 108 · every API claim, recomputed
 ```
 
 `test_leakage.py` corrupts every raw input after a cut date, rebuilds the panel
 and requires all earlier features to be bit-identical — catching a centred
 window or a negative shift regardless of what it is called. `test_app.py` does
 not trust the API: it recomputes each served claim from the stored artefacts.
+`test_risk.py` injects a 118 km/h forecast to exercise the cyclone path without
+waiting for a cyclone, and fails if any warning without a measured effect size
+behind it is ever flagged as measured.
 
 ## 📋 Status
 
@@ -137,7 +144,7 @@ not trust the API: it recomputes each served claim from the stored artefacts.
 | a | Market entry timing | **Delivered** |
 | b | Vessel-type optimisation under port constraints | Part-load delivered; MILP next |
 | c | Idle / deadhead management | Port load signal only |
-| d | Risk warnings | Findings delivered; alerting next |
+| d | Risk warnings | **Delivered** |
 
 ## 🗂️ Data and licence
 
@@ -146,7 +153,7 @@ not trust the API: it recomputes each served claim from the stored artefacts.
 | Mendeley `10.17632/t76ckh2ygg` *(CC BY 4.0)* | Baltic Capesize, Panamax, Supramax, Handysize | 1,749 rows, 2012-08-01 → 2019-07-31 |
 | IMF PortWatch | daily port calls and dry bulk tonnage, 11 ports | 2,797 rows each, → 2026-08-28 |
 | Yahoo Finance | BDRY, Brent, copper, DXY, S&P 500, USD/INR, owners, miners | 2012 → current |
-| Open-Meteo | rainfall, wind, gusts at four discharge ports | 5,358 rows each |
+| Open-Meteo | rainfall, wind, gusts at all five discharge ports | 5,358 rows each, plus a live 10-day forecast |
 
 Baltic index history is redistributed under **CC BY 4.0**. Baltic Exchange
 indices themselves are proprietary and are **not** redistributed here.
