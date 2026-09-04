@@ -23,6 +23,7 @@ Run:  python app.py      ->  http://127.0.0.1:5000
 
 import os
 import json
+import math
 import sys
 
 import numpy as np
@@ -30,7 +31,7 @@ import pandas as pd
 from flask import Flask, request, jsonify, Response
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from src import paths  # noqa: E402
+from src import paths, ports, congestion  # noqa: E402
 
 app = Flask(__name__)
 
@@ -47,6 +48,26 @@ def _load_json(path):
         return None
     with open(path) as f:
         return json.load(f)
+
+
+def _finite(value):
+    """Return a JSON-safe float, or None.
+
+    JSON has no NaN or Infinity. Flask will happily serialise a bare
+    NaN, which Python's json.loads accepts but every browser's
+    JSON.parse rejects - so the response is HTTP 200 with a body the
+    page cannot read, and the dashboard fails silently.
+
+    Nothing in the current artefacts is non-finite, but the conformal
+    bounds are NaN for any fold whose calibration block is too small, so
+    a change to N_FOLDS could reintroduce it. Send null instead and let
+    the page decide how to show a missing bound.
+    """
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
 
 
 METRICS = _load_json(METRICS_PATH)
@@ -97,6 +118,152 @@ def api_control():
         'control_experiment': LIVE.get('control_experiment'),
         'n_effective': LIVE.get('n_effective'),
     })
+
+
+@app.route('/api/ports')
+def api_ports():
+    """Reference data for Module B: what each class is, what each berth
+    permits, and the resulting cargo matrix. No input needed - this is
+    physics and published port limits, not a forecast."""
+    matrix = []
+    for vessel in ports.VESSELS:
+        row = {'vessel': vessel, 'cells': []}
+        for port in ports.PORTS:
+            r = ports.can_serve(vessel, port)
+            row['cells'].append({
+                'port': port,
+                'max_cargo_t': r['max_cargo_t'],
+                'utilisation': _finite(r['utilisation']),
+                'verdict': r['verdict'],
+                'binding': r['binding'],
+                'foregone_t': r['foregone_t'],
+                'caveats': r['caveats'],
+            })
+        matrix.append(row)
+
+    return jsonify({
+        'vessels': [{
+            'name': n,
+            'dwt': v['dwt'],
+            'draft_m': v['draft'],
+            'loa_m': v['loa'],
+            'beam_m': v['beam'],
+            'tpc': _finite(round(ports.tpc(n), 1)),
+            'cargo_capacity_t': v['dwt'] - v['constants'],
+        } for n, v in ports.VESSELS.items()],
+        'ports': [{
+            'name': n,
+            'max_draft_m': p['max_draft'],
+            'max_loa_m': p['max_loa'],
+            'max_beam_m': p['max_beam'],
+            'density': p['density'],
+            'lighterage': p['lighterage'],
+            'geometry_verified': p['geometry_verified'],
+            'note': p['note'],
+        } for n, p in ports.PORTS.items()],
+        'matrix': matrix,
+        'min_utilisation': ports.MIN_UTILISATION,
+    })
+
+
+@app.route('/api/ports/options', methods=['POST'])
+def api_port_options():
+    """Ranked ways to move a given parcel.
+
+    Ranked by voyages, then verdict, then how much of the capacity you
+    charter the cargo actually fills - not by how full each ship can be,
+    which would call a Capesize and a Newcastlemax equally good and quietly
+    recommend the more expensive one.
+    """
+    data = request.json or {}
+    raw = data.get('parcel_t')
+    if raw is None:
+        return jsonify({'error': "'parcel_t' is required"}), 400
+    try:
+        parcel = float(raw)
+    except (TypeError, ValueError):
+        return jsonify({'error': "'parcel_t' must be a number, got %r"
+                        % (raw,)}), 400
+    if not math.isfinite(parcel):
+        return jsonify({'error': "'parcel_t' must be finite"}), 400
+    if parcel <= 0:
+        return jsonify({'error': "'parcel_t' must be greater than 0"}), 400
+    if parcel > 5e6:
+        return jsonify({'error': "'parcel_t' must be <= 5000000"}), 400
+
+    try:
+        opts = ports.options_for(parcel)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    for o in opts:
+        o['utilisation'] = _finite(o['utilisation'])
+        o['parcel_utilisation'] = _finite(o['parcel_utilisation'])
+
+    return jsonify({
+        'parcel_t': parcel,
+        'options': opts,
+        'best': opts[0] if opts else None,
+        'n': len(opts),
+    })
+
+
+@app.route('/api/congestion')
+def api_congestion():
+    """How busy each port is running against its own history, from IMF
+    PortWatch AIS data - both the east-coast discharge berths and the
+    load terminals that feed them.
+
+    This is the only part of the system with CURRENT data - the Baltic
+    series ends 2019-07-31, PortWatch runs to last week. It is arrivals
+    and tonnage, not waiting time, and the response says so.
+    """
+    try:
+        snaps = congestion.all_snapshots()
+    except Exception as exc:
+        return jsonify({'error': 'port activity unavailable: %s' % exc}), 503
+
+    profiles = {}
+    for p in congestion.ALL_PORTS:
+        try:
+            profiles[p] = congestion.monthly_profile(p)
+        except Exception:
+            profiles[p] = None
+
+    return jsonify({
+        'snapshots': snaps,
+        'discharge': [s for s in snaps if s.get('role') == 'discharge'],
+        'load': [s for s in snaps if s.get('role') == 'load'],
+        'monthly_profile': profiles,
+        'window_days': congestion.WINDOW,
+        'bands': [{'below_percentile': None if c == float('inf') else c,
+                   'label': n} for c, n in congestion.BANDS],
+        'measures': 'arrivals and tonnage, not waiting time',
+        'caveat': ('PortWatch reports vessel arrivals derived from AIS. '
+                   'It does not publish queue length or berth occupancy, '
+                   'so a high reading means the berth is under load and '
+                   'you should expect competition for it - not that your '
+                   'ship will wait a specific number of days.'),
+    })
+
+
+@app.route('/api/congestion/<port>')
+def api_congestion_port(port):
+    """Daily arrivals for one port, for charting."""
+    if port not in congestion.ALL_PORTS:
+        return jsonify({'error': 'unknown port %r; known: %s'
+                        % (port, ', '.join(congestion.ALL_PORTS))}), 400
+    try:
+        days = int(request.args.get('days', 180))
+    except (TypeError, ValueError):
+        return jsonify({'error': "'days' must be an integer"}), 400
+    days = max(30, min(days, 1000))
+    try:
+        return jsonify({'port': port, 'days': days,
+                        'series': congestion.series(port, days=days),
+                        'snapshot': congestion.snapshot(port)})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 503
 
 
 @app.route('/api/dates')
@@ -197,26 +364,26 @@ def api_predict():
         'as_of': str(d.date()),
         'requested': str(when.date()),
         'horizon_days': horizon,
-        'capesize_index': level,
+        'capesize_index': _finite(level),
 
-        'expected_move_pct': pct(pred),
-        'lo_pct': pct(lo_r),
-        'hi_pct': pct(hi_r),
+        'expected_move_pct': _finite(pct(pred)),
+        'lo_pct': _finite(pct(lo_r)),
+        'hi_pct': _finite(pct(hi_r)),
         'interval_pct': int(round(
             METRICS.get('models', {}).get('conformal', {})
             .get('target', 0.8) * 100)),
 
-        'current_rate': current_rate,
-        'projected_rate': round(projected, 2),
+        'current_rate': _finite(current_rate),
+        'projected_rate': _finite(round(projected, 2)),
         'recommendation': recommendation,
         # Named "exposure", not "savings": it is the size of the move at
         # risk on this parcel, not money banked.
-        'exposure': round(exposure, 2),
+        'exposure': _finite(round(exposure, 2)),
         'direction': 'up' if rising else 'down',
 
         # Ground truth. The model never saw this.
-        'actual_move_pct': pct(actual),
-        'actual_rate': round(realised, 2),
+        'actual_move_pct': _finite(pct(actual)),
+        'actual_rate': _finite(round(realised, 2)),
         'direction_correct': bool(np.sign(pred) == np.sign(actual)),
         'inside_interval': bool(lo_r <= actual <= hi_r),
 

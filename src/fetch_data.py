@@ -87,9 +87,9 @@ PORTS = {
     'port826':  'norfolk',
     'port103':  'baltimore',
     'port812':  'new_orleans',
-    # Load ports - Mozambique
-    'port137':  'beira',
-    'port784':  'nacala',
+    # Mozambique (Beira port137, Nacala port784) is deliberately not
+    # fetched: a marginal coking coal trade for this lane, and both sit
+    # below the reliability floor in src/congestion.py.
 }
 
 PAGE = 1000   # IMF PortWatch maxRecordCount; asking for more is ignored
