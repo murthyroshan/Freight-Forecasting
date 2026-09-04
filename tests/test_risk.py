@@ -13,6 +13,7 @@ forecast is injected.
 Run:  python -m tests.test_risk
 """
 
+import io
 import os
 import re
 import sys
@@ -397,12 +398,49 @@ def main():
 
     print('\n[25] none of this changes the healthy path')
     rows = risk.assess()
-    check('no unavailable rows when every artefact is present',
-          not [w for w in rows if w['kind'] == 'unavailable'],
-          [w['title'] for w in rows if w['kind'] == 'unavailable'])
-    check('still %d checks across %d ports plus the model'
-          % (len(rows), len(risk.SITES)),
-          len(rows) == len(risk.SITES) * 3 + 1, len(rows))
+    # Scoped to the signals that come from artefacts on disk. A weather
+    # row can legitimately be 'unavailable' because Open-Meteo dropped a
+    # request, and a dropped packet must not fail a test about logic.
+    gaps = [w['title'] for w in rows if w['kind'] == 'unavailable'
+            and not w['title'].startswith('Weather')]
+    check('no unavailable rows from the artefacts on disk', not gaps, gaps)
+    offline = [w['port'] for w in rows if w['kind'] == 'unavailable'
+               and w['title'].startswith('Weather')]
+    if offline:
+        print('         (note: Open-Meteo did not answer for %s - the '
+              'weather assertions below are skipped for those)'
+              % ', '.join(offline))
+    # weather_warnings returns ONE row per port, plus a SECOND whenever
+    # a forecast day exceeds RAIN_HEAVY_MM. On the Bay of Bengal in
+    # September that is a coin flip, so asserting exactly one made the
+    # build depend on the weather. Assert the structure instead.
+    # A port whose forecast did not arrive contributes an 'unavailable'
+    # row instead, so count both kinds: every port must produce a row
+    # either way, and that is the invariant worth holding.
+    covered = [w for w in rows if w['kind'] in ('weather', 'unavailable')]
+    per_port = {p: sum(1 for w in covered if w['port'] == p)
+                for p in risk.SITES}
+    check('one or two weather rows per port, never zero: %s'
+          % sorted(per_port.values()),
+          all(1 <= c <= 2 for c in per_port.values()), per_port)
+    online = {p for p in risk.SITES if p not in offline}
+    got = {p: sum(1 for w in rows if w['kind'] == 'weather' and w['port'] == p)
+           for p in online}
+    check('every port Open-Meteo answered for has a real weather row '
+          '(%d of %d ports)' % (len(online), len(risk.SITES)),
+          all(1 <= c <= 2 for c in got.values()), got)
+    for kind in ('berth', 'seasonal'):
+        n_kind = sum(1 for w in rows if w['kind'] == kind)
+        check('exactly one %s row per port (%d of %d)'
+              % (kind, n_kind, len(risk.SITES)),
+              n_kind == len(risk.SITES), n_kind)
+    check('exactly one model row',
+          sum(1 for w in rows if w['kind'] == 'model') == 1)
+    check('so the panel is %d rows, between the %d-row floor and the '
+          '%d-row ceiling' % (len(rows), len(risk.SITES) * 3 + 1,
+                              len(risk.SITES) * 4 + 1),
+          len(risk.SITES) * 3 + 1 <= len(rows) <= len(risk.SITES) * 4 + 1,
+          len(rows))
 
     print('\n[26] a malformed 200 response cannot become an all-clear')
     # The nastiest shape Open-Meteo can return is not an error - it is a
@@ -492,8 +530,24 @@ def main():
     # failure to whichever layer gives up first.
     worst = risk.TIMEOUT * len(risk.SITES)
     check('server worst case is %ds' % worst, worst == 60, worst)
-    check('under the browser 75s abort', worst < 75, worst)
-    check('which is under the 90s that tests/test_app.py allows', 75 < 90)
+    # This used to end `check('...', 75 < 90)` - two literals compared to
+    # each other, which no code change could ever break. Read the other
+    # two rungs from the files that actually set them.
+    page = io.open(os.path.join(paths.TEMPLATES, 'dashboard.html'),
+                   encoding='utf-8').read()
+    mb = re.search(r'ctl\.abort\(\), (\d+)\)', page)
+    check('the page sets a client abort at all', mb is not None)
+    browser = int(mb.group(1)) / 1000.0 if mb else None
+    suite = io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 'test_app.py'), encoding='utf-8').read()
+    mt = re.search(r"/api/risk', timeout=(\d+)", suite)
+    client = int(mt.group(1)) if mt else None
+    check('the browser abort (%ss) sits above the server worst case (%ss)'
+          % (browser, worst), browser is not None and worst < browser,
+          (worst, browser))
+    check('and the suite timeout (%ss) sits above the browser abort'
+          % client, client is not None and browser < client,
+          (browser, client))
 
     print('\n' + '=' * 62)
     if FAIL:

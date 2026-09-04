@@ -56,16 +56,21 @@
     },
     "conformal": {
       "target": 0.8,
-      "coverage": 0.805940594059406,
-      "mean_width": 0.6620261087922819,
+      "coverage": 0.8198019801980198,
+      "mean_width": 0.6890150685503149,
       "n": 1010,
       "wraps": "ridge",
-      "method": "locally-weighted split conformal"
+      "method": "locally-weighted split conformal",
+      "plain_coverage": 0.7841584158415842,
+      "plain_mean_width": 0.5062616844985365
     },
     "direction_test": {
       "rate": 0.6485148514851485,
       "n_effective": 202,
-      "p_value": 1.4580587194379569e-05,
+      "base_rate": 0.5168316831683168,
+      "p_value": 0.0003175602233710014,
+      "p_value_raw": 0.0001058534077903338,
+      "n_candidates": 3,
       "significant": true
     },
     "folds": [

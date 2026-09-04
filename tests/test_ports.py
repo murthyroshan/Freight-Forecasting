@@ -53,20 +53,35 @@ def main():
               lo <= t <= hi)
 
     print('\n[2] the resulting draft never exceeds what the port permits')
+    # Honest framing: resulting_draft() inverts max_cargo()'s own
+    # formula with the same TPC and the same allowance, so this is an
+    # INTERNAL CONSISTENCY check - it would pass with TPC wrong by a
+    # factor of a thousand. The genuine external anchor is section [4],
+    # which reproduces Paradip's documented ~155,000 DWT from nothing
+    # but a draft the model was never told the deadweight for.
     bad = []
+    checked = []
     for vessel in ports.VESSELS:
         for port in ports.PORTS:
             p = ports.PORTS[port]
             cargo, _ = ports.max_cargo(vessel, port)
             if cargo <= 0 or p['max_draft'] is None:
                 continue
+            checked.append((vessel, port))
             d = resulting_draft(vessel, port, cargo)
             if d > p['max_draft'] + 1e-6:
                 bad.append('%s/%s draws %.3f vs limit %.2f'
                            % (vessel, port, d, p['max_draft']))
-    check('all %d loadable combinations respect their draft limit'
-          % sum(1 for v in ports.VESSELS for p in ports.PORTS
-                if ports.max_cargo(v, p)[0] > 0), not bad, bad)
+    # The headline used to count 41 loadable combinations while the
+    # loop above evaluated 35 - the six Sagar-Sandheads pairs have no
+    # declared draft, so they were advertised as checked without being
+    # checked. Count what was actually walked.
+    check('all %d DRAFT-LIMITED combinations respect their limit '
+          '(%d more have no declared draft and are not draft-checked)'
+          % (len(checked),
+             sum(1 for v in ports.VESSELS for p in ports.PORTS
+                 if ports.max_cargo(v, p)[0] > 0) - len(checked)),
+          not bad, bad)
 
     print('\n[3] a deeper port never carries less than a shallower one')
     # Monotonicity. Ordered by declared draft, excluding the anchorage

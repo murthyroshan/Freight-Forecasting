@@ -30,7 +30,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
-from src import paths  # noqa: E402
+from src import paths, train_model  # noqa: E402
 
 import json
 import pickle
@@ -146,8 +146,8 @@ def evaluate(df):
         if len(Xcal) > 20:
             vc = np.clip(X[cal_lo:tr_hi, vol_i], 1e-4, None)
             vt = np.clip(X[sl, vol_i], 1e-4, None)
-            q = np.quantile(np.abs(ycal - rg.predict(sc.transform(Xcal))) / vc,
-                            1 - ALPHA)
+            q = train_model.conformal_quantile(
+                np.abs(ycal - rg.predict(sc.transform(Xcal))) / vc, ALPHA)
             lo[sl] = pr['ridge'][sl] - q * vt
             hi[sl] = pr['ridge'][sl] + q * vt
 
@@ -173,8 +173,14 @@ def evaluate(df):
 
 
 def fit_and_save(df):
-    """Fit on everything we have, and store the conformal quantile from
-    a held-out tail so the live interval is not fitted on itself."""
+    """Fit on the first 85%, and store the conformal quantile from the
+    held-out tail so the live interval is not fitted on itself.
+
+    NOT "everything we have", which is what this used to claim: the
+    calibration tail is never folded back in after the quantile is
+    taken, so the saved model is deliberately blind to the most recent
+    15% of the series. That is the price of an honest interval.
+    """
     d = df.dropna(subset=FEATURES + ['y'])
     X = d[FEATURES].to_numpy(float)
     y = d['y'].to_numpy(float)
@@ -185,9 +191,8 @@ def fit_and_save(df):
     rg = Ridge(alpha=10.0).fit(sc.transform(X[:fit_hi]), y[:fit_hi])
     vi = FEATURES.index('bdry_vol_21')
     vc = np.clip(X[cal_lo:, vi], 1e-4, None)
-    q = float(np.quantile(
-        np.abs(y[cal_lo:] - rg.predict(sc.transform(X[cal_lo:]))) / vc,
-        1 - ALPHA))
+    q = train_model.conformal_quantile(
+        np.abs(y[cal_lo:] - rg.predict(sc.transform(X[cal_lo:]))) / vc, ALPHA)
 
     with open(os.path.join(MODELS, 'live_ridge.pkl'), 'wb') as f:
         pickle.dump({'scaler': sc, 'model': rg, 'features': FEATURES,

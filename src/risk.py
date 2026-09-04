@@ -5,7 +5,8 @@ Deliverable (d) of the problem statement. Four signals, and the honest
 distinction between them matters more than the count:
 
   MEASURED   an effect this repository has quantified and significance
-             tested. Only one signal qualifies - the cyclone rule.
+             tested. Two qualify: the cyclone rule and the width of the
+             model's own conformal interval.
   CONTEXT    a real observation with no measured effect size attached.
              Reported so a desk can weigh it, never as a prediction.
 
@@ -74,7 +75,7 @@ def _dmy(d):
 def _unavailable(port, what, exc):
     """A signal that could not be computed is REPORTED, never dropped.
 
-    Silently returning nothing shrinks the panel from thirteen checks to
+    Silently returning nothing shrinks the panel from sixteen checks to
     two with no explanation, and every remaining row still reads
     reassuringly. That is the same failure as answering an unknown port
     with 'no disruptive weather forecast' - absence of a warning being
@@ -338,7 +339,7 @@ def model_uncertainty():
                    'log return, the %s percentile of its own history. A wide '
                    'band means the model is uncertain, not that rates will '
                    'move.' % (last, _ord(pctile))),
-        'basis': ('measured: locally weighted conformal intervals, 80.6% '
+        'basis': ('measured: locally weighted conformal intervals, 82.0% '
                   'realised coverage against an 80% target'),
     }
 

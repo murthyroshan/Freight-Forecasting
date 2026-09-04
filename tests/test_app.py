@@ -38,6 +38,26 @@ def close(a, b, tol=1e-6):
 
 
 def main():
+    """Wrapper so a dropped connection is reported, not raised.
+
+    Only the first of ~35 HTTP calls used to sit inside a try. Every
+    later one propagated a raw exception out of main(), so a slow or
+    restarted server produced a Python traceback instead of a FAIL line
+    - and the failure never appeared in the PASS/FAIL accounting at all.
+    """
+    try:
+        return _main()
+    except requests.exceptions.RequestException as exc:
+        check('the server stayed reachable for the whole run', False,
+              '%s: %s' % (type(exc).__name__, str(exc)[:120]))
+        print()
+        print('=' * 62)
+        print('  1 CHECK FAILED: the run did not complete')
+        print('=' * 62)
+        return 1
+
+
+def _main():
     try:
         requests.get(BASE + '/api/dates', timeout=10)
     except Exception:

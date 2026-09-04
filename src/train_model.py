@@ -27,6 +27,7 @@ Evaluation protocol, and why each piece is there:
 Run:  python train_model.py
 """
 
+import math
 import os
 import sys
 
@@ -57,12 +58,75 @@ ALPHA = 0.20          # -> 80% prediction interval
 CONF_ON = 'ridge'     # intervals wrap whichever model actually wins
 
 
-def walk_forward(df, feats):
-    """Expanding-window folds with a purge gap. Returns per-row
-    out-of-sample predictions for every model."""
-    n = len(df)
+def conformal_quantile(residuals, alpha):
+    """The split-conformal quantile, with its finite-sample correction.
+
+    Plain `np.quantile(r, 1 - alpha)` is NOT the conformal quantile. The
+    guarantee requires the ceil((n+1)(1-alpha))/n order statistic taken
+    from above, which for a calibration block of n is strictly wider. The
+    difference is small at n=100 and vanishes as n grows, but without it
+    the coverage guarantee is asserted rather than held - measured on the
+    exchangeable random-walk null, the uncorrected version sits at 78.0%
+    against a nominal 80%.
+    """
+    r = np.asarray(residuals, dtype=float)
+    n = r.size
+    if n == 0:
+        return float('inf')
+    k = math.ceil((n + 1) * (1.0 - alpha))
+    if k > n:                      # too few points to bound at this level
+        return float(np.max(r))
+    return float(np.quantile(r, k / n, method='higher'))
+
+
+def folds(n):
+    """The fold boundaries, as (k, te_lo, te_hi, tr_hi, cal_lo, fit_hi).
+
+    Split out of walk_forward so the purge gap is something a test can
+    assert on directly. It could not be before: the boundaries were
+    local variables, and inverting the gap so the training window
+    overlapped the test window left every test in this repository green.
+
+      fit  [0 : fit_hi)          model fitted here
+      gap  HORIZON rows          purge
+      cal  [cal_lo : tr_hi)      conformal calibration
+      gap  HORIZON rows          purge
+      test [te_lo : te_hi)       scored here
+
+    Both gaps are HORIZON wide because the target at row i is a function
+    of row i+HORIZON, so without them the last targets of one block are
+    computed from rows inside the next.
+    """
     start = int(n * 0.40)                     # first fold trains on 40%
     fold_size = (n - start) // N_FOLDS
+    out = []
+    for k in range(N_FOLDS):
+        te_lo = start + k * fold_size
+        te_hi = n if k == N_FOLDS - 1 else te_lo + fold_size
+        tr_hi = te_lo - HORIZON               # the purge gap
+        if tr_hi < 100:
+            continue
+        # Carve a calibration tail off the training block for conformal.
+        cal_lo = int(tr_hi * 0.85)
+        fit_hi = cal_lo - HORIZON
+        out.append((k, te_lo, te_hi, tr_hi, cal_lo, fit_hi))
+    return out
+
+
+def walk_forward(df, feats, conformal='local'):
+    """Expanding-window folds with a purge gap. Returns per-row
+    out-of-sample predictions for every model.
+
+    `conformal` selects the interval method: 'local' scales residuals by
+    cape_vol_21 (what ships), 'plain' uses one global quantile. The
+    second exists so the claim that local weighting helps is a number
+    this repository computes, on these exact folds, rather than a figure
+    written into a comment where it can drift.
+    """
+    if conformal not in ('local', 'plain'):
+        raise ValueError("conformal must be 'local' or 'plain', got %r"
+                         % (conformal,))
+    n = len(df)
     X = df[feats].to_numpy(dtype=float)
     y = df['y'].to_numpy(dtype=float)
 
@@ -76,16 +140,7 @@ def walk_forward(df, feats):
     vol_i = feats.index('cape_vol_21')
     fold_rows = []
 
-    for k in range(N_FOLDS):
-        te_lo = start + k * fold_size
-        te_hi = n if k == N_FOLDS - 1 else te_lo + fold_size
-        tr_hi = te_lo - HORIZON               # the purge gap
-        if tr_hi < 100:
-            continue
-
-        # Carve a calibration tail off the training block for conformal.
-        cal_lo = int(tr_hi * 0.85)
-        fit_hi = cal_lo - HORIZON
+    for k, te_lo, te_hi, tr_hi, cal_lo, fit_hi in folds(n):
 
         Xtr, ytr = X[:fit_hi], y[:fit_hi]
         Xcal, ycal = X[cal_lo:tr_hi], y[cal_lo:tr_hi]
@@ -120,18 +175,22 @@ def walk_forward(df, feats):
         best_cal = ridge_cal if CONF_ON == 'ridge' else gb.predict(Xcal)
 
         # --- locally adaptive split conformal -----------------------
-        # Plain split conformal gave 73.5% coverage for a nominal 80%.
-        # Freight vol clusters hard, so one global residual quantile is
-        # too narrow in stressed regimes and too wide in calm ones.
-        # Scale each residual by a volatility estimate that is known at
-        # t (cape_vol_21, a trailing window), then rescale on the test
-        # side. This is the Lei/Romano locally-weighted variant and it
-        # keeps the finite-sample guarantee.
+        # Plain split conformal on this model gives 78.4% coverage for a
+        # nominal 80% (computed below, not asserted here). Freight vol
+        # clusters hard, so one global residual
+        # quantile is too narrow in stressed regimes and too wide in calm
+        # ones. Scale each residual by a volatility estimate known at t
+        # (cape_vol_21, a trailing window), then rescale on the test
+        # side - the Lei/Romano locally-weighted variant.
         if len(Xcal) > 20:
-            v_cal = np.clip(X[cal_lo:tr_hi, vol_i], 1e-4, None)
-            v_te = np.clip(X[te_lo:te_hi, vol_i], 1e-4, None)
+            if conformal == 'local':
+                v_cal = np.clip(X[cal_lo:tr_hi, vol_i], 1e-4, None)
+                v_te = np.clip(X[te_lo:te_hi, vol_i], 1e-4, None)
+            else:
+                v_cal = np.ones(tr_hi - cal_lo)
+                v_te = np.ones(te_hi - te_lo)
             resid = np.abs(ycal - best_cal) / v_cal
-            q = np.quantile(resid, 1 - ALPHA)
+            q = conformal_quantile(resid, ALPHA)
             lo[sl] = preds[CONF_ON][sl] - q * v_te
             hi[sl] = preds[CONF_ON][sl] + q * v_te
 
@@ -202,22 +261,49 @@ if __name__ == '__main__':
                                 'wraps': CONF_ON, 'method':
                                 'locally-weighted split conformal'}
 
+        # The control for the interval method. Same folds, same model,
+        # same corrected quantile - only the local scaling removed - so
+        # the difference is attributable to the scaling and to nothing
+        # else. Written to the artefact so the README can quote a number
+        # a script here printed.
+        _, plo, phi, _, _, _ = walk_forward(df, feats, conformal="plain")
+        pv = m & np.isfinite(plo)
+        if pv.any():
+            yp = df['y'].to_numpy(dtype=float)[pv]
+            pcov = float(((yp >= plo[pv]) & (yp <= phi[pv])).mean())
+            pwid = float(np.mean(phi[pv] - plo[pv]))
+            results['conformal']['plain_coverage'] = pcov
+            results['conformal']['plain_mean_width'] = pwid
+            print('  plain (no local scaling)  actual %.1f%%  '
+                  'mean width %.3f' % (pcov * 100, pwid))
+
     # Is the direction edge real, or 202 coin flips that went our way?
     # Test on the EFFECTIVE count, not the row count - overlapping
     # windows would otherwise inflate significance about 5x.
     from scipy import stats as _st
     n_eff = int(m.sum() // HORIZON)
-    p_best = preds[max(('momentum', 'ridge', 'lgbm'),
+    # The model tested is chosen by its OUT-OF-SAMPLE direction score and
+    # then tested on that same score. Three candidates, so the p-value is
+    # Bonferroni-adjusted; without it this is not a clean out-of-sample p.
+    candidates = ('momentum', 'ridge', 'lgbm')
+    p_best = preds[max(candidates,
                        key=lambda k: results[k]['direction_pct'])][m]
     da = float((np.sign(p_best) == np.sign(y)).mean())
     k_eff = int(round(da * n_eff))
-    pval = float(_st.binomtest(k_eff, n_eff, 0.5,
-                               alternative='greater').pvalue)
+    # The null is the realised up-rate, not 0.5. An "always up" predictor
+    # already scores the base rate, so testing against a coin flatters
+    # any model on a series that drifts.
+    base = float((y > 0).mean())
+    raw = float(_st.binomtest(k_eff, n_eff, base,
+                              alternative='greater').pvalue)
+    pval = min(1.0, raw * len(candidates))
     print('\n  direction %.1f%% on ~%d independent windows -> p = %.4f %s'
           % (da * 100, n_eff, pval,
              '(significant)' if pval < 0.05 else '(NOT significant)'))
     results['direction_test'] = {'rate': da, 'n_effective': n_eff,
-                                 'p_value': pval,
+                                 'base_rate': base,
+                                 'p_value': pval, 'p_value_raw': raw,
+                                 'n_candidates': len(candidates),
                                  'significant': bool(pval < 0.05)}
 
     print('\n  per-fold RMSE (is the win consistent?):')

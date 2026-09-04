@@ -496,7 +496,57 @@ const tons = n => (n === null || n === undefined) ? '—' : Math.round(n).toLoca
 // injected as HTML, so it is escaped anyway. A basis string is the last
 // place that should be able to close a tag.
 const rkEsc = t => String(t === null || t === undefined ? '' : t)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+// Numbers from the API can legitimately be null - _json_safe() sends
+// null rather than the NaN that JSON.parse would reject. Calling
+// .toFixed() on that throws, abandoning the whole innerHTML assignment
+// and blanking a panel that was half-built. These render a dash.
+// Only the risk loader had a timeout. The rest would hang forever on a
+// stalled socket, leaving the masthead on "connecting" and the skeletons
+// pulsing for the life of the tab, with nothing to click.
+// A fetch that cannot hang. Returns the Response, so callers keeping
+// their own .ok / .json() handling do not have to change shape.
+async function fetchWithTimeout(url, ms, opts) {
+    const ctl = new AbortController();
+    const bail = setTimeout(() => ctl.abort(), ms || 30000);
+    try {
+        return await fetch(url, Object.assign({ signal: ctl.signal },
+                                              opts || {}));
+    } finally {
+        clearTimeout(bail);
+    }
+}
+
+async function getJSON(url, opts, ms) {
+    const ctl = new AbortController();
+    const bail = setTimeout(() => ctl.abort(), ms || 30000);
+    try {
+        const r = await fetch(url, Object.assign({ signal: ctl.signal },
+                                                 opts || {}));
+        let d = null;
+        try { d = await r.json(); } catch (e) { d = null; }
+        if (!r.ok) {
+            throw new Error((d && d.error) || ('HTTP ' + r.status));
+        }
+        if (d === null) throw new Error('the server sent a body this page '
+                                        + 'could not read as JSON');
+        return d;
+    } catch (e) {
+        if (e.name === 'AbortError') {
+            throw new Error('no answer within ' + Math.round((ms || 30000)
+                                                             / 1000) + 's');
+        }
+        throw e;
+    } finally {
+        clearTimeout(bail);
+    }
+}
+
+const nfix = (v, dp) => (v === null || v === undefined || !isFinite(v))
+    ? '\u2014' : Number(v).toFixed(dp === undefined ? 2 : dp);
+const nloc = v => (v === null || v === undefined || !isFinite(v))
+    ? '\u2014' : Number(v).toLocaleString();
 const rkTitle = t => String(t || '').split('_')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 // 1st/2nd/3rd/4th, and 11–13 are always "th" — otherwise the 53rd
@@ -628,7 +678,7 @@ async function predict() {
     if (seq !== predictSeq) return;
     let r;
     try {
-        const resp = await fetch('/api/predict', { method:'POST',
+        const resp = await fetchWithTimeout('/api/predict', 30000, { method:'POST',
             headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
         r = await resp.json();
         if (seq !== predictSeq) return;
@@ -654,7 +704,7 @@ async function predict() {
         <div class="v-k">Recommendation</div>
         <div class="v-h">${wait ? 'Wait' : 'Charter now'}</div>
         <div class="v-b">
-          As of <b>${fmtDate(r.as_of)}</b>, Capesize index <b>${r.capesize_index.toLocaleString()}</b>.<br>
+          As of <b>${fmtDate(r.as_of)}</b>, Capesize index <b>${nloc(r.capesize_index)}</b>.<br>
           Forecast over ${r.horizon_days} trading days: <b>${pct(r.expected_move_pct)}</b>
           &nbsp;(${band})<br>
           <b>$${r.current_rate}</b>/t &rarr; <b>$${r.projected_rate}</b>/t —
@@ -697,34 +747,75 @@ async function loadMetrics() {
             const win = f.ridge < f.zero;
             return `<tr><td class="n">${f.fold}</td>
               <td>${fmtDate(f.start)} → ${fmtDate(f.end)}</td>
-              <td class="n">${f.zero.toFixed(4)}</td><td class="n">${f.momentum.toFixed(4)}</td>
-              <td class="n" style="font-weight:700">${f.ridge.toFixed(4)}</td>
-              <td class="n">${f.lgbm.toFixed(4)}</td>
+              <td class="n">${nfix(f.zero, 4)}</td><td class="n">${nfix(f.momentum, 4)}</td>
+              <td class="n" style="font-weight:700">${nfix(f.ridge, 4)}</td>
+              <td class="n">${nfix(f.lgbm, 4)}</td>
               <td><span class="tag ${win ? 't-good' : 't-bad'}">${
                   win ? 'beats baseline' : 'loses'}</span></td></tr>`; }).join('');
 
-        if (dr.ok) {
-            const d = await dr.json();
-            const el = document.getElementById('date');
-            el.min = d.min; el.max = d.max; el.value = d.max;
-            document.getElementById('dateRange').textContent = `(${fmtDate(d.min)} – ${fmtDate(d.max)})`;
-        }
-        if (cr.ok) {
-            const c = await cr.json();
-            const ce = c.control_experiment || {};
-            document.getElementById('controlBody').innerHTML = `
-              <tr><td><b>Baltic Capesize</b></td><td>daily broker survey</td>
-                <td class="n" style="color:var(--good-t);font-weight:700">${ce.capesize_lag1_autocorr.toFixed(3)}</td>
-                <td class="n" style="color:var(--good-t)">${pct(best.skill_vs_zero_pct)}</td></tr>
-              <tr><td><b>BDRY ETF</b></td><td>traded freight futures fund</td>
-                <td class="n" style="color:var(--crit-t);font-weight:700">${ce.bdry_lag1_autocorr.toFixed(3)}</td>
-                <td class="n" style="color:var(--crit-t)">${pct(c.bdry.ridge.skill_vs_zero_pct)}</td></tr>`;
-            document.getElementById('controlNote').textContent = ce.conclusion || '';
-        }
+        // /api/dates and /api/control are scored separately from here
+        // on. They used to share this function's single try, so a
+        // failure in either one printed "model artefacts not found"
+        // over a provenance line that had already rendered correctly
+        // from /api/metrics - and a non-OK response hit `if (x.ok)`
+        // with no else, leaving a skeleton pulsing for the life of the
+        // tab with nothing to explain it.
+        await fillDates(dr);
+        await fillControl(cr, best);
     } catch (e) {
         document.getElementById('m_provenance').textContent =
             'Model artefacts not found. Run: python -m src.fetch_data '
             + '&& python -m src.build_panel && python -m src.train_model';
+    }
+}
+
+async function fillDates(dr) {
+    const range = document.getElementById('dateRange');
+    try {
+        if (!dr.ok) {
+            const e = await dr.json().catch(() => ({}));
+            range.textContent = '(' + (e.error || 'date range unavailable') + ')';
+            return;
+        }
+        const d = await dr.json();
+        const el = document.getElementById('date');
+        el.min = d.min; el.max = d.max; el.value = d.max;
+        range.textContent = `(${fmtDate(d.min)} – ${fmtDate(d.max)})`;
+    } catch (e) {
+        range.textContent = '(date range unavailable)';
+    }
+}
+
+async function fillControl(cr, best) {
+    const body = document.getElementById('controlBody');
+    const note = document.getElementById('controlNote');
+    const stall = msg => {
+        // Never leave the skeleton up. A blank pulsing box reads as
+        // "still loading" forever; the API told us exactly what is
+        // missing, so say it.
+        body.innerHTML = '<tr><td colspan="4">' + rkEsc(msg) + '</td></tr>';
+    };
+    try {
+        if (!cr.ok) {
+            const e = await cr.json().catch(() => ({}));
+            stall(e.error || ('the control experiment could not be loaded '
+                              + '(HTTP ' + cr.status + ')'));
+            note.textContent = '';
+            return;
+        }
+        const c = await cr.json();
+        const ce = c.control_experiment || {};
+        body.innerHTML = `
+          <tr><td><b>Baltic Capesize</b></td><td>daily broker survey</td>
+            <td class="n" style="color:var(--good-t);font-weight:700">${nfix(ce.capesize_lag1_autocorr, 3)}</td>
+            <td class="n" style="color:var(--good-t)">${pct(best.skill_vs_zero_pct)}</td></tr>
+          <tr><td><b>BDRY ETF</b></td><td>traded freight futures fund</td>
+            <td class="n" style="color:var(--crit-t);font-weight:700">${nfix(ce.bdry_lag1_autocorr, 3)}</td>
+            <td class="n" style="color:var(--crit-t)">${pct(((c.bdry || {}).ridge || {}).skill_vs_zero_pct)}</td></tr>`;
+        note.textContent = ce.conclusion || '';
+    } catch (e) {
+        stall('the control experiment could not be read: ' + e.message);
+        note.textContent = '';
     }
 }
 
@@ -739,7 +830,7 @@ let PORT_REF = null;
 // fetched once and never depends on the parcel.
 async function loadPortMatrix() {
     try {
-        const resp = await fetch('/api/ports');
+        const resp = await fetchWithTimeout('/api/ports', 30000);
         if (!resp.ok) throw new Error('ports');
         const d = await resp.json();
         PORT_REF = d;
@@ -864,7 +955,7 @@ async function portOptions() {
     if (seq !== portSeq) return;
     let d;
     try {
-        const resp = await fetch('/api/ports/options', { method:'POST',
+        const resp = await fetchWithTimeout('/api/ports/options', 30000, { method:'POST',
             headers:{'Content-Type':'application/json'}, body:JSON.stringify({parcel_t:parcel}) });
         d = await resp.json();
         if (seq !== portSeq) return;
@@ -911,12 +1002,35 @@ const BAND_INK = { 'quiet':'#155e5a', 'normal':'var(--good-t)', 'busy':'var(--wa
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 let congChart = null;
 
+// Every figure in this sentence is computed by congestion.cyclone_effect()
+// and served with the rest of the payload. It used to be typed into the
+// markup - threshold, effect size and p-value alike - which is the one
+// thing this project says it never does.
+function cycloneProse(c) {
+    if (!c) {
+        return '<b>the cyclone test could not run</b> — the weather history '
+             + 'for this port is not present.';
+    }
+    const share = 100 * c.gust_days_sep_dec / Math.max(c.sep_dec_days, 1);
+    return '<b>Cyclones do stop ships</b> — on the day of and before a gust '
+         + 'above ' + nfix(c.gust_kmh, 0) + ' km/h, ' + rkTitle(c.port)
+         + ' arrivals fall <b>' + nfix(Math.abs(c.change_pct), 0) + '%</b> ('
+         + nfix(c.storm_calls_per_day, 2) + ' against ' + nfix(c.normal_calls_per_day, 2)
+         + ' calls/day)'
+         + (c.p_value !== null && c.p_value !== undefined
+            ? ', p = ' + Number(c.p_value).toExponential(1) : '')
+         + '. <b>But they cannot explain the season:</b> only ' + c.gust_days
+         + ' such days occur in the whole record, ' + c.gust_days_may
+         + ' of them in May and ' + c.gust_days_sep_dec + ' in September–December '
+         + '— ' + nfix(share, 2) + '% of that window. Sep–Dec is the calmest '
+         + 'stretch of the year. Weather is a short-horizon disruption signal, '
+         + 'not a seasonal one.';
+}
+
 async function loadCongestion() {
     let d;
     try {
-        const resp = await fetch('/api/congestion');
-        if (!resp.ok) throw new Error('congestion');
-        d = await resp.json();
+        d = await getJSON('/api/congestion', null, 45000);
     } catch (e) {
         document.getElementById('congCaveat').textContent =
             'Port activity unavailable. Run: python -m src.fetch_data';
@@ -938,7 +1052,7 @@ async function loadCongestion() {
         return `<div class="pc">
           <div class="nm">${s.label}</div>
           <div class="big" style="color:${BAND_INK[s.band] || 'var(--ink)'}">${s.calls_per_day.toFixed(2)}</div>
-          <div class="sub">calls/day vs ${s.baseline_calls_per_day.toFixed(2)} normal</div>
+          <div class="sub">calls/day vs ${nfix(s.baseline_calls_per_day, 2)} normal</div>
           <div class="sub" title="Total across the berth, both directions. Only ${ktLane} kt/day is ${s.flow} — the rest is cargo moving the other way, competing for the same quays.">${ktAll} kt/day total · ${ktLane} ${s.flow}</div>
           <div style="margin-top:7px"><span class="tag ${BAND_TAG[s.band] || 't-mute'}">${s.band}${
             s.reliable ? ` · ${ordinal(s.percentile)}` : ''}</span></div></div>`; };
@@ -982,13 +1096,7 @@ async function loadCongestion() {
             `${s.port} — ${s.reliability_note}`).join('; ') : '')
         + '<br><b>Seasonality:</b> every Indian port dips September to December. '
         + 'Tested against Open-Meteo wind for the same ports and dates, two things '
-        + 'are true. <b>Cyclones do stop ships</b> — on the day of and before a gust '
-        + 'above 90 km/h, Paradip arrivals fall <b>88%</b> and Dhamra to <b>zero</b>, '
-        + 'both p &lt; 0.0001. <b>But they cannot explain the season:</b> Paradip has '
-        + 'had 7 such days in 8 years, 5 of them in May, and Sep–Dec holds 2 — about '
-        + '0.4% of that window against a ~15% shortfall. Sep–Dec is the calmest '
-        + 'stretch of the year. Weather is a short-horizon disruption signal, not a '
-        + 'seasonal one.';
+        + 'are true. ' + cycloneProse(d.cyclone_effect);
 
     // live is empty on a fresh clone, before fetch_data has run.
     // live[0].port would throw and take the whole panel with it.
@@ -997,10 +1105,19 @@ async function loadCongestion() {
         '<b>No port data yet.</b> Run: <code>python -m src.fetch_data</code>';
 }
 
+// predict, portOptions and solveFleet all take a sequence ticket. This
+// one did not, and it is bound to a <select> change - so two quick port
+// changes could land out of order and leave the chart showing port A
+// under port B's label, permanently.
+let congSeq = 0;
+
 async function drawCongestion(port) {
+    const seq = ++congSeq;
     let d;
     try {
-        const resp = await fetch(`/api/congestion/${port}?days=365`);
+        const resp = await fetchWithTimeout(
+            `/api/congestion/${encodeURIComponent(port)}?days=365`, 30000);
+        if (seq !== congSeq) return;
         if (!resp.ok) return;
         d = await resp.json();
     } catch (e) { return; }
@@ -1035,12 +1152,18 @@ const VOYAGE_HINT = {
 };
 let fleetSeq = 0;
 
+// The id is written into markup and read back by getElementById, so
+// both sides must agree. They did not: one was escaped and the other
+// was not, so a class name containing & or < would have had its cost
+// silently dropped from the request.
+const costId = name => 'vc_' + String(name).replace(/[^A-Za-z0-9_-]/g, '_');
+
 function buildCostInputs() {
     const box = document.getElementById('voyageCosts');
     if (!box || !PORT_REF || !PORT_REF.vessels) return;
     box.innerHTML = PORT_REF.vessels.map(v =>
-        '<div><label for="vc_' + rkEsc(v.name) + '">' + rkEsc(v.name) + '</label>'
-        + '<input type="number" id="vc_' + rkEsc(v.name) + '" min="0" step="10000" value="'
+        '<div><label for="' + costId(v.name) + '">' + rkEsc(v.name) + '</label>'
+        + '<input type="number" id="' + costId(v.name) + '" min="0" step="10000" value="'
         + (VOYAGE_HINT[v.name] || 1000000) + '"></div>').join('');
 }
 
@@ -1051,9 +1174,18 @@ async function solveFleet() {
         out.innerHTML = '<p class="note">Enter a parcel size above.</p>';
         return;
     }
+    // PORT_REF stays null if /api/ports ever failed. buildCostInputs
+    // guards for this; solveFleet did not, so the button threw to the
+    // console and did nothing at all - no error, no message.
+    if (!PORT_REF || !PORT_REF.vessels) {
+        out.innerHTML = '<p class="note"><b>Vessel and berth reference '
+                      + 'data did not load,</b> so there is nothing to '
+                      + 'solve over. Reload the page.</p>';
+        return;
+    }
     const voyage = {};
     (PORT_REF.vessels || []).forEach(v => {
-        const el = document.getElementById('vc_' + v.name);
+        const el = document.getElementById(costId(v.name));
         if (el && el.value !== '') voyage[v.name] = Number(el.value);
     });
     const fee = Number(document.getElementById('portFee').value) || 0;
@@ -1070,7 +1202,7 @@ async function solveFleet() {
     out.innerHTML = '<p class="note">Solving&hellip;</p>';
     let d;
     try {
-        const r = await fetch('/api/optimise', {
+        const r = await fetchWithTimeout('/api/optimise', 60000, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 parcel_t: parcel, voyage_cost: voyage, port_cost: per(fee),
@@ -1157,7 +1289,7 @@ async function loadBallast() {
     const body = document.getElementById('ballastBody');
     let d;
     try {
-        const r = await fetch('/api/ballast');
+        const r = await fetchWithTimeout('/api/ballast', 30000);
         d = await r.json();
         if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
     } catch (e) {
@@ -1169,8 +1301,8 @@ async function loadBallast() {
         const name = rkTitle(r.port);
         if (!r.reliable) {
             return '<tr><td><b>' + name + '</b></td>'
-                 + '<td class="n">' + r.import_kt_per_day.toFixed(1) + '</td>'
-                 + '<td class="n">' + r.export_kt_per_day.toFixed(1) + '</td>'
+                 + '<td class="n">' + nfix(r.import_kt_per_day, 1) + '</td>'
+                 + '<td class="n">' + nfix(r.export_kt_per_day, 1) + '</td>'
                  + '<td class="n" colspan="2"><span class="tag t-mute">not scored</span></td>'
                  + '<td style="font-size:11.5px;color:var(--ink-3)">'
                  + rkEsc(r.note) + '</td></tr>';
@@ -1185,9 +1317,9 @@ async function loadBallast() {
                  ? ' <span class="tag t-mute">unsettled</span>'
                  : ' <span style="color:var(--ink-3)">same answer throughout</span>');
         return '<tr><td><b>' + name + '</b></td>'
-             + '<td class="n">' + r.import_kt_per_day.toFixed(1) + '</td>'
-             + '<td class="n">' + r.export_kt_per_day.toFixed(1) + '</td>'
-             + '<td class="n">' + r.ratio.toFixed(2) + '</td>'
+             + '<td class="n">' + nfix(r.import_kt_per_day, 1) + '</td>'
+             + '<td class="n">' + nfix(r.export_kt_per_day, 1) + '</td>'
+             + '<td class="n">' + nfix(r.ratio, 2) + '</td>'
              + '<td class="n"><span class="tag ' + cls + '">' + empty + '%</span></td>'
              + '<td style="font-size:11.5px">' + span + '</td></tr>';
     }).join('');

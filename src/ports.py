@@ -29,7 +29,7 @@ Waterplane area is estimated as Lwl * B * Cw, with Cw the waterplane
 coefficient. Bulk carriers are full-form; Cw is taken as 0.85 at loaded
 draft, and Lwl as 0.97 * LOA. This is an ESTIMATE, not a hydrostatic
 table: a real fixture would use the ship's own deadweight scale. The
-TPC values it produces (Capesize ~110, Panamax ~61 t/cm) sit inside the
+TPC values it produces (Capesize ~110, Panamax ~63 t/cm) sit inside the
 published ranges for those classes, which is the accuracy this decision
 needs.
 
@@ -389,7 +389,11 @@ if __name__ == '__main__':
         row = '  %-14s' % vs
         for pt in ports:
             c, _ = max_cargo(vs, pt)
-            row += '%12s' % ('-' if c <= 0 else '{:,}'.format(round(c)))
+            # floor, never round: this table is where docs/METHOD.md's
+            # cargo figures came from, and round() published 41,740 t for
+            # a berth that permits 41,739.64 - the exact overload this
+            # module's own docstring warns about.
+            row += '%12s' % ('-' if c <= 0 else '{:,}'.format(math.floor(c)))
         print(row)
 
     print('\n  The trade-off this exists to expose:')
