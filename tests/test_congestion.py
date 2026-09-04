@@ -197,6 +197,67 @@ def main():
     check('Sep-Dec is below the rest of the year at all %d INDIAN ports'
           % len(C.DISCHARGE), not dips, dips)
 
+    print('\n[6a] the cyclone explanation for the dip is REFUTED')
+    # The Sep-Dec dip is real, and Bay of Bengal cyclone season is the
+    # obvious story. It is wrong, and this locks that in so the claim
+    # cannot drift back into the README or the dashboard.
+    wx = pd.read_parquet(os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        'data', 'raw', 'wx_paradip.parquet')).set_index('date')
+    wx = wx[wx.index >= '2019-01-01']
+    gust_days = (wx['gust_max'] > 90).groupby(wx.index.month).sum()
+    may = int(gust_days.get(5, 0))
+    autumn = int(gust_days.get(10, 0) + gust_days.get(11, 0)
+                 + gust_days.get(12, 0))
+    check('cyclone-force gusts peak in May (%d days) not Oct-Dec (%d)'
+          % (may, autumn), may > autumn,
+          'if this flips, re-examine the seasonal claim')
+
+    d = C.load('paradip')
+    j = pd.concat([d['portcalls_dry_bulk'], wx['gust_max']],
+                  axis=1).dropna()
+    # A merely breezy day does nothing. The 90th percentile is ~55 km/h,
+    # which is weather, not a storm.
+    cut = j['gust_max'].quantile(0.90)
+    calm = j[j['gust_max'] <= cut]['portcalls_dry_bulk'].mean()
+    windy = j[j['gust_max'] > cut]['portcalls_dry_bulk'].mean()
+    check('ordinary wind (top 10%%, >%.0f km/h) does not move arrivals '
+          '(%.2f vs %.2f)' % (cut, windy, calm), windy >= calm * 0.98)
+
+    # But a real cyclone does, enormously - and the seasonal claim must
+    # not be allowed to swallow that. Both halves are asserted here.
+    storm = set()
+    for t in j.index[j['gust_max'] > 90]:
+        storm.add(t)
+        storm.add(t - pd.Timedelta(days=1))
+    m = j.index.isin(sorted(storm))
+    s_mean = float(j['portcalls_dry_bulk'][m].mean())
+    n_mean = float(j['portcalls_dry_bulk'][~m].mean())
+    check('a >90 km/h storm window DOES halt arrivals (%.2f vs %.2f, %+.0f%%)'
+          % (s_mean, n_mean, 100 * (s_mean / n_mean - 1)),
+          s_mean < n_mean * 0.5,
+          'the storm effect has vanished - re-check the weather join')
+
+    # ...but is far too rare to be the seasonal driver.
+    w19 = wx[wx.index >= '2019-01-01']
+    sd = int((w19['gust_max'] > 90).groupby(w19.index.month).sum()
+             .reindex([9, 10, 11, 12]).fillna(0).sum())
+    check('only %d storm days fall in Sep-Dec across the whole window '
+          '- far too few to drive a 15%% seasonal shortfall' % sd, sd <= 4,
+          'storms in Sep-Dec are commoner than assumed; revisit the claim')
+
+    prof = j.groupby(j.index.month)['portcalls_dry_bulk'].mean()
+    gust = j.groupby(j.index.month)['gust_max'].mean()
+    r = float(prof.corr(gust))
+    check('monthly arrivals correlate POSITIVELY with gusts (r=%+.3f)' % r,
+          r > 0.4, 'a negative r would support the weather explanation')
+
+    sep_dec_gust = float(gust[[9, 10, 11, 12]].mean())
+    rest_gust = float(gust[[1, 2, 3, 4, 5, 6, 7, 8]].mean())
+    check('Sep-Dec is LESS windy (%.0f) than the rest of the year (%.0f)'
+          % (sep_dec_gust, rest_gust), sep_dec_gust < rest_gust,
+          'the dip months are not the calm months - claim needs revisiting')
+
     print('\n[6b] monthly_profile honours as_of too')
     # Otherwise a caller asking about a past date gets a rewound
     # snapshot beside a profile built from data that had not happened.

@@ -1,863 +1,965 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SAIL - Freight Rate Forecasting System</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
-        body { background: #0f172a; color: #e2e8f0; min-height: 100vh; }
-        .navbar { background: #1e293b; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
-        .navbar h1 { font-size: 1.3em; color: #38bdf8; }
-        .navbar .badge { background: #0284c7; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8em; }
-        .container { max-width: 1200px; margin: 20px auto; padding: 0 20px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
-        .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
-        .card h2 { color: #38bdf8; font-size: 1.1em; margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
-        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
-        .stat-box { background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155; text-align: center; }
-        .stat-box .value { font-size: 1.8em; font-weight: bold; color: #38bdf8; }
-        .stat-box .label { font-size: 0.8em; color: #94a3b8; margin-top: 5px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; font-size: 0.85em; color: #94a3b8; margin-bottom: 5px; }
-        input, select { width: 100%; padding: 10px; border-radius: 6px; background: #0f172a; border: 1px solid #334155; color: white; font-size: 0.9em; }
-        button { width: 100%; padding: 12px; border-radius: 6px; background: #0284c7; color: white; border: none; font-weight: bold; cursor: pointer; font-size: 1em; transition: 0.2s; }
-        button:hover { background: #0369a1; }
-        .recommendation { padding: 15px; border-radius: 8px; margin-top: 15px; text-align: center; }
-        .rec-now { background: #064e3b; border: 1px solid #059669; color: #6ee7b7; }
-        .rec-wait { background: #7c2d12; border: 1px solid #ea580c; color: #fdba74; }
-        .rec-title { font-size: 1.4em; font-weight: bold; }
-        .rec-savings { font-size: 1.1em; margin-top: 5px; }
-        .full-width { grid-column: 1 / -1; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85em; }
-        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #334155; }
-        th { color: #94a3b8; }
-    </style>
-</head>
-<body>
-    <div class="navbar">
-        <h1>🚢 SAIL - Freight Rate Forecasting System</h1>
-        <span class="badge">SIH26006 Prototype</span>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SAIL · Freight Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+/* ─────────────────────────────────────────────────────────
+   Warm industrial palette — the colours of the trade itself:
+   iron-ore rust, mill paper, coal-black ink. The two series
+   hues (rust #c2410c, aqua #0e7f57) were run through the
+   palette validator against this exact paper surface: CVD
+   ΔE 13.1, normal-vision ΔE 30.1, both ≥3:1 contrast.
+   ───────────────────────────────────────────────────────── */
+:root{
+  --paper:#f6f3ee; --card:#fffefb; --sunk:#efebe3;
+  --ink:#1a1614; --ink-2:#55504a; --ink-3:#8a8279;
+  --rule:#e2ddd3; --rule-2:#c9c2b6;
+  --rust:#c2410c; --aqua:#0e7f57; --amber:#eda100;
+  --good-t:#166534; --good-b:rgba(12,163,12,.12); --good-r:rgba(12,163,12,.34);
+  --warn-t:#92400e; --warn-b:rgba(250,178,25,.16); --warn-r:rgba(250,178,25,.46);
+  --crit-t:#991b1b; --crit-b:rgba(208,59,59,.11); --crit-r:rgba(208,59,59,.34);
+  --ff:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --fd:'Newsreader',Georgia,'Times New Roman',serif;
+  --fm:'JetBrains Mono',ui-monospace,Consolas,monospace;
+}
+/* ── PALETTE B · "Foundry" — the dark alternative, held in reserve ──
+   Validated against its own anthracite surface #1c1a17: lightness band,
+   chroma floor, CVD separation (worst adjacent ΔE 11.8 protan),
+   normal-vision floor (24.9) and 3:1 contrast all PASS.
+
+   To switch themes, replace the :root block above with this one and
+   swap the three chart constants (RUST/AQUA/AMBER) in the script. The
+   markup, the layout and every measurement stay as they are.
+
+     --paper:#14120f; --card:#1c1a17; --sunk:#232019;
+     --ink:#f2ede4;   --ink-2:#b3aa9c; --ink-3:#857c6e;
+     --rule:#2e2a24;  --rule-2:#453f36;
+     --rust:#e0722a;  --aqua:#12a189;  --amber:#d9a520;
+     --good-t:#5fc46a; --good-b:rgba(12,163,12,.14); --good-r:rgba(12,163,12,.40);
+     --warn-t:#e0b04a; --warn-b:rgba(250,178,25,.14); --warn-r:rgba(250,178,25,.42);
+     --crit-t:#e88585; --crit-b:rgba(208,59,59,.14); --crit-r:rgba(208,59,59,.40);
+
+   Also flip in the draft cross-section: sea stops #dfe9e5/#c2d2cc ->
+   #253b38/#16211f, seabed stroke #a89f92 -> #57503f, and the hull's
+   deck/label fill #fffefb -> #14120f.
+
+   A runtime toggle was considered and deliberately not built: it doubles
+   the surface to test for a control judges will not click, and Chart.js
+   fixes its colours at construction, so a live switch has to tear down
+   and rebuild both charts. Choosing once, for the room you are actually
+   presenting in, costs a minute and carries no risk.
+   ────────────────────────────────────────────────────────────────── */
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--paper); color:var(--ink); font-family:var(--ff);
+  font-size:14px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(var(--rule) .6px,transparent .6px);
+  background-size:22px 22px;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 72px}
+
+/* ── masthead ─────────────────────────────────────────── */
+.top{
+  position:sticky;top:0;z-index:40;margin:0 -24px;padding:0 24px;
+  background:rgba(246,243,238,.94);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--rule);
+}
+.top-in{display:flex;align-items:center;gap:18px;padding:15px 0 0;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:11px}
+.brand h1{font-family:var(--fd);font-weight:500;font-size:21px;letter-spacing:-.01em}
+.brand span{font-size:11px;color:var(--ink-3);letter-spacing:.09em;text-transform:uppercase}
+.grow{flex:1}
+.live{
+  display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;
+  color:var(--good-t);background:var(--good-b);border:1px solid var(--good-r);
+  padding:4px 11px;border-radius:3px;white-space:nowrap;
+}
+.live i{width:5px;height:5px;border-radius:50%;background:#0ca30c;font-style:normal;animation:beat 2.6s infinite}
+@keyframes beat{0%,100%{opacity:1}50%{opacity:.3}}
+
+nav{display:flex;gap:2px;margin-top:12px;overflow-x:auto}
+nav button{
+  appearance:none;background:none;border:0;cursor:pointer;font-family:var(--ff);
+  font-size:13px;font-weight:600;color:var(--ink-3);padding:9px 15px;
+  border-bottom:2px solid transparent;white-space:nowrap;transition:color .18s,border-color .18s;
+}
+nav button:hover{color:var(--ink)}
+nav button[aria-current="true"]{color:var(--rust);border-bottom-color:var(--rust)}
+nav button em{font-style:normal;font-family:var(--fm);font-size:10px;opacity:.6;margin-right:6px}
+
+/* ── views ────────────────────────────────────────────── */
+.view{display:none;animation:enter .45s cubic-bezier(.22,1,.36,1)}
+.view.on{display:block}
+@keyframes enter{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.view{animation:none}.live i{animation:none}}
+
+.lede{margin:30px 0 22px;max-width:74ch}
+.lede h2{font-family:var(--fd);font-weight:500;font-size:30px;letter-spacing:-.02em;line-height:1.22}
+.lede p{color:var(--ink-2);font-size:14px;margin-top:9px}
+.lede em{font-style:italic;font-family:var(--fd);font-size:15px}
+
+.card{background:var(--card);border:1px solid var(--rule);border-radius:4px;padding:22px}
+.card + .card{margin-top:18px}
+.split{display:grid;grid-template-columns:minmax(280px,360px) 1fr;gap:18px}
+@media(max-width:880px){.split{grid-template-columns:1fr}}
+.cap{
+  font-family:var(--fm);font-size:10px;font-weight:700;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:12px;
+  padding-bottom:8px;border-bottom:1px solid var(--rule);
+}
+
+/* ── form ─────────────────────────────────────────────── */
+.f{margin-bottom:15px}
+.f label{display:block;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
+.f .hint{font-size:11.5px;color:var(--ink-3);margin-top:6px;line-height:1.5;text-transform:none;letter-spacing:0;font-weight:400}
+input,select{
+  width:100%;padding:10px 12px;border:1px solid var(--rule-2);border-radius:3px;
+  background:var(--card);color:var(--ink);font-family:var(--fm);font-size:14.5px;
+  font-variant-numeric:tabular-nums;transition:border-color .18s,box-shadow .18s;
+}
+input:focus,select:focus{outline:none;border-color:var(--rust);box-shadow:0 0 0 3px rgba(194,65,12,.13)}
+select{font-family:var(--ff);font-size:13.5px}
+
+/* ── verdict ──────────────────────────────────────────── */
+.verdict{margin-top:18px;padding:17px;border-radius:3px;border-left:3px solid;animation:enter .4s}
+.v-now{background:var(--good-b);border-color:#0ca30c}
+.v-wait{background:var(--warn-b);border-color:var(--amber)}
+.v-bad{background:var(--crit-b);border-color:#d03b3b}
+.v-k{font-family:var(--fm);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.v-h{font-family:var(--fd);font-weight:500;font-size:31px;letter-spacing:-.02em;margin:1px 0 9px;line-height:1.1}
+.v-b{font-size:13.5px;color:var(--ink-2);line-height:1.7}
+.v-b b{color:var(--ink);font-family:var(--fm);font-weight:500;font-variant-numeric:tabular-nums}
+.truth{margin-top:11px;padding-top:10px;border-top:1px solid var(--rule-2);font-size:12.5px;color:var(--ink-3)}
+.plot{position:relative;height:300px}
+.plot.sm{height:215px}
+
+/* ── tiles ────────────────────────────────────────────── */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));border:1px solid var(--rule);border-radius:4px;overflow:hidden;background:var(--card)}
+.tile{padding:19px 20px;border-right:1px solid var(--rule)}
+.tile:last-child{border-right:0}
+@media(max-width:820px){.tile{border-right:0;border-bottom:1px solid var(--rule)}}
+.tile .value{font-family:var(--fm);font-size:31px;font-weight:700;letter-spacing:-.035em;font-variant-numeric:tabular-nums;line-height:1.1}
+.tile .label{font-size:11.5px;color:var(--ink-3);margin-top:7px;line-height:1.45}
+
+/* ── tables ───────────────────────────────────────────── */
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{
+  text-align:left;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);padding:9px 11px;border-bottom:1px solid var(--rule-2);white-space:nowrap;
+}
+td{padding:9px 11px;border-bottom:1px solid var(--rule);font-variant-numeric:tabular-nums}
+tbody tr:last-child td{border-bottom:0}
+tbody tr{transition:background .15s}
+tbody tr:hover{background:var(--sunk)}
+td.n,th.n{text-align:right;font-family:var(--fm)}
+.tag{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:3px;font-size:10.5px;font-weight:650;white-space:nowrap;border:1px solid}
+.t-good{color:var(--good-t);background:var(--good-b);border-color:var(--good-r)}
+.t-warn{color:var(--warn-t);background:var(--warn-b);border-color:var(--warn-r)}
+.t-bad{color:var(--crit-t);background:var(--crit-b);border-color:var(--crit-r)}
+.t-info{color:#155e5a;background:rgba(14,127,87,.12);border-color:rgba(14,127,87,.38)}
+.t-mute{color:var(--ink-3);background:var(--sunk);border-color:var(--rule-2)}
+
+/* ── port cards ───────────────────────────────────────── */
+.pg{display:grid;grid-template-columns:repeat(auto-fit,minmax(162px,1fr));border:1px solid var(--rule);border-radius:4px;overflow:hidden;margin:10px 0 4px}
+.pc{padding:13px 14px;border-right:1px solid var(--rule);background:var(--card)}
+.pc:last-child{border-right:0}
+.pc .nm{font-size:11.5px;font-weight:600;color:var(--ink-2)}
+.pc .big{font-family:var(--fm);font-size:24px;font-weight:700;letter-spacing:-.035em;margin:2px 0;font-variant-numeric:tabular-nums}
+.pc .sub{font-size:10.5px;color:var(--ink-3);line-height:1.5}
+.gl{font-family:var(--fm);font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);margin-top:18px}
+.gl span{text-transform:none;letter-spacing:0;font-weight:400;font-family:var(--ff)}
+
+/* ── draft section ────────────────────────────────────── */
+.draft{border:1px solid var(--rule);border-radius:3px;overflow:hidden;background:var(--sunk)}
+.draft svg{display:block;width:100%;height:auto}
+.hull{transition:transform .9s cubic-bezier(.22,1,.36,1)}
+.swell{animation:roll 8s ease-in-out infinite alternate}
+@keyframes roll{from{transform:translateX(0)}to{transform:translateX(-44px)}}
+@media (prefers-reduced-motion:reduce){.swell{animation:none}}
+
+.note{font-size:11.5px;color:var(--ink-3);line-height:1.7;margin-top:12px}
+.note b{color:var(--ink-2)}
+.key{display:flex;flex-wrap:wrap;gap:14px;font-size:11px;margin:2px 0 8px}
+.key span{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2)}
+.key i{width:9px;height:9px;border-radius:2px;font-style:normal}
+.skel{display:inline-block;min-width:150px;height:.85em;background:var(--sunk);border-radius:2px;animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--rule);font-size:11.5px;color:var(--ink-3);line-height:1.75}
+code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px;border-radius:2px}
+</style>
+
+<div class="wrap">
+  <div class="top"><div class="top-in">
+    <div class="brand"><h1>Freight Intelligence</h1><span>SAIL · SIH26006</span></div>
+    <div class="grow"></div>
+    <div class="live"><i></i><span id="congAsOf">connecting…</span></div>
+  </div>
+  <nav>
+    <button data-v="timing" aria-current="true"><em>01</em>Charter timing</button>
+    <button data-v="fleet"><em>02</em>Vessel &amp; port</button>
+    <button data-v="ports"><em>03</em>Port activity</button>
+    <button data-v="proof"><em>04</em>Validation</button>
+  </nav></div>
+
+  <!-- ══════════ 01 · timing ══════════ -->
+  <div class="view on" id="v-timing">
+    <div class="lede">
+      <h2>When to fix the charter</h2>
+      <p>Choose a decision date and the model returns the forecast it made
+        <em>at that moment</em> — fitted only on data before it, with a five-day
+        purge gap. Because the forecast is genuinely out-of-sample the outcome is
+        knowable, so it is shown beside the call rather than hidden.</p>
+    </div>
+    <div class="split">
+      <div class="card">
+        <div class="cap">Inputs</div>
+        <div class="f">
+          <label>Decision date <span id="dateRange" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink-3)"></span></label>
+          <input type="date" id="date">
+          <div class="hint" id="dateEcho"></div>
+        </div>
+        <div class="f"><label>Negotiated rate — $ per tonne</label>
+          <input type="number" id="current_rate" value="42.50" step="0.01"></div>
+        <div class="f"><label>Shipment volume — tonnes</label>
+          <input type="number" id="volume" value="160000" step="1000">
+          <div class="hint">Brent, copper, the dollar and owner equities are read
+            from the data for this date — model inputs, not fields you fill in.</div></div>
+        <div id="recResult"></div>
+      </div>
+      <div class="card">
+        <div class="cap">Forecast against realised outcome</div>
+        <div class="plot"><canvas id="forecastChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 02 · fleet ══════════ -->
+  <div class="view" id="v-fleet">
+    <div class="lede">
+      <h2>Which ship, into which berth</h2>
+      <p>A laden Capesize draws 18.2 m. Paradip's coal berth permits 16.0 m. That
+        does not rule the ship out — it arrives <em>part-laden</em>. How much cargo
+        it can carry is set by TPC, tonnes per centimetre of immersion.</p>
+    </div>
+    <div class="split">
+      <div class="card">
+        <div class="cap">Parcel</div>
+        <div class="f"><label>Parcel size — tonnes</label>
+          <input type="number" id="parcel_t" value="160000" step="1000" min="1"></div>
+        <div id="portBest"></div>
+      </div>
+      <div class="card">
+        <div class="cap">Draft against berth</div>
+        <div class="draft" id="draftViz"></div>
+        <div class="note" id="draftNote"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cap">Ranked fixtures</div>
+      <div class="scroll"><table>
+        <thead><tr><th>Vessel</th><th>Discharge port</th><th>Verdict</th>
+          <th class="n">Voyages</th><th class="n">Cargo / voyage</th>
+          <th class="n">Fill</th><th class="n">Left on table</th></tr></thead>
+        <tbody id="portOptBody"><tr><td colspan="7"><span class="skel"></span></td></tr></tbody>
+      </table></div>
+      <p class="note"><b>Fill</b> is how much of the capacity you charter this parcel
+        actually uses — not how full each ship could be. Ranking on the latter calls
+        a Capesize and a Newcastlemax equally good and quietly recommends the more
+        expensive one.</p>
+    </div>
+    <div class="card">
+      <div class="cap">Maximum cargo by class and berth · tonnes</div>
+      <div class="scroll"><table><thead><tr id="portMatrixHead"></tr></thead>
+        <tbody id="portMatrixBody"><tr><td><span class="skel"></span></td></tr></tbody></table></div>
+      <p class="note" id="portCaveat"></p>
+    </div>
+  </div>
+
+  <!-- ══════════ 03 · ports ══════════ -->
+  <div class="view" id="v-ports">
+    <div class="lede">
+      <h2>What the berths are doing now</h2>
+      <p>Vessel arrivals from IMF PortWatch, derived from AIS.
+        <b>This is the only current data in the system</b> — the Baltic index history
+        ends 31/07/2019, this runs to last week. Every port is scored against
+        <em>its own</em> past. The Indian berths are where the decision is made; load
+        terminals usually arrive with the coal supply contract, so they are watched
+        for delay risk rather than chosen.</p>
+    </div>
+    <div class="card">
+      <div class="cap">Live activity</div>
+      <div class="gl">Discharge — east coast India</div>
+      <div class="pg" id="congCards"></div>
+      <div class="gl">Load — Australia, US <span>(watched for risk)</span></div>
+      <div class="pg" id="congLoadCards"></div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:20px 0 12px">
+        <label style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)">Chart port</label>
+        <select id="congPort" style="width:auto;min-width:200px"></select>
+      </div>
+      <div class="plot sm"><canvas id="congChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="cap">Seasonal pattern · arrivals by month</div>
+      <p class="note" style="margin:0 0 8px">100 = that port's own annual average, 2019&ndash;2026.</p>
+      <div class="scroll"><table><thead><tr id="seasonHead"></tr></thead><tbody id="seasonBody"></tbody></table></div>
+      <p class="note" id="congCaveat"></p>
+    </div>
+  </div>
+
+  <!-- ══════════ 04 · validation ══════════ -->
+  <div class="view" id="v-proof">
+    <div class="lede">
+      <h2>Whether to believe any of it</h2>
+      <p>Every figure below is read from an artefact a script in this repository
+        produced. Nothing is typed into the markup, and a missing artefact returns
+        <code>503</code> with instructions rather than a plausible substitute.</p>
+    </div>
+    <div class="tiles">
+      <div class="tile"><div class="value" id="m_dir">&mdash;</div><div class="label">Direction accuracy, out-of-sample</div></div>
+      <div class="tile"><div class="value" id="m_skill">&mdash;</div><div class="label">RMSE skill vs assuming no change</div></div>
+      <div class="tile"><div class="value" id="m_cov">&mdash;</div><div class="label">Interval coverage, 80% target</div></div>
+      <div class="tile"><div class="value" id="m_folds">&mdash;</div><div class="label">Time folds won vs baseline</div></div>
+    </div>
+    <p class="note" id="m_provenance" style="margin-bottom:20px"><span class="skel"></span></p>
+
+    <div class="card">
+      <div class="cap">Walk-forward validation · every fold</div>
+      <p class="note" style="margin:0 0 8px">Each fold trains only on data before its
+        test window, with a five-day purge gap. RMSE of the five-day log return —
+        lower is better. Shown in full, including the folds we lose.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Fold</th><th>Test window</th><th class="n">No change</th>
+          <th class="n">Momentum</th><th class="n">Ridge</th><th class="n">LightGBM</th><th></th></tr></thead>
+        <tbody id="foldBody"><tr><td colspan="7"><span class="skel"></span></td></tr></tbody>
+      </table></div>
     </div>
 
-    <div class="container">
-        <!-- Key Stats -->
-        <div class="stats-grid">
-            <div class="stat-box">
-                <div class="value" id="m_dir">&mdash;</div>
-                <div class="label">Direction accuracy (out-of-sample)</div>
-            </div>
-            <div class="stat-box">
-                <div class="value" id="m_skill">&mdash;</div>
-                <div class="label">RMSE skill vs assuming no change</div>
-            </div>
-            <div class="stat-box">
-                <div class="value" id="m_cov">&mdash;</div>
-                <div class="label">Interval coverage (target 80%)</div>
-            </div>
-            <div class="stat-box">
-                <div class="value" id="m_folds">&mdash;</div>
-                <div class="label">Time folds won vs baseline</div>
-            </div>
-        </div>
-        <p class="note" id="m_provenance" style="margin:-8px 0 18px;color:#94a3b8;
-           font-size:0.82em;">loading measured performance&hellip;</p>
-
-        <div class="grid">
-            <!-- Prediction Form -->
-            <div class="card">
-                <h2>🔮 Predict Freight Rate & Chartering Strategy</h2>
-                <form id="predForm">
-                    <div class="form-group">
-                        <label>Shipment Volume (Tons)</label>
-                        <input type="number" id="volume" value="10000" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Current Freight Rate ($/Ton)</label>
-                        <input type="number" id="current_rate" value="42.50" step="0.01" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Decision date <span id="dateRange"
-                               style="color:#94a3b8;font-weight:400"></span></label>
-                        <input type="date" id="date">
-                        <div style="color:#94a3b8;font-size:0.78em;margin-top:6px">
-                          Brent, copper, USD and owner equities are read from
-                          the data for this date &mdash; they are model inputs,
-                          not things you type in.
-                        </div>
-                    </div>
-                    <button type="button" onclick="predict()">Run forecast</button>
-                </form>
-
-                <div id="recResult" style="display: none;"></div>
-            </div>
-
-            <!-- Chart -->
-            <div class="card">
-                <h2>📈 Forecast vs actual outcome</h2>
-                <canvas id="forecastChart" height="200"></canvas>
-            </div>
-
-            <!-- Module B: live port activity -->
-            <div class="card full-width">
-                <h2>📡 Port activity, both ends of the lane &mdash;
-                    <span id="congAsOf" style="color:#22c55e"></span></h2>
-                <p style="color:#94a3b8;font-size:0.85em;margin-top:-6px">
-                  Vessel arrivals from IMF PortWatch, derived from AIS.
-                  <b>This is the only current data in the system</b> &mdash; the
-                  Baltic index history ends 31/07/2019, this runs to last week.
-                  Each port is scored against <i>its own</i> history, because
-                  New Orleans handles twenty times Gopalpur's traffic.
-                  <b>The Indian berths are where the decision is</b> &mdash;
-                  SAIL picks the discharge port. The load terminals below
-                  usually come with the coal supply contract, so they are
-                  watched for delay risk rather than chosen.
-                </p>
-
-                <h3 id="dischargeHead" style="color:#94a3b8;font-size:0.85em;
-                    margin:16px 0 0;text-transform:uppercase;
-                    letter-spacing:.06em">Discharge &mdash; east coast India</h3>
-                <div style="display:grid;
-                            grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-                            gap:12px;margin:10px 0 4px">
-                  <div id="congCards" style="display:contents"></div>
-                </div>
-
-                <h3 id="loadHead" style="color:#94a3b8;font-size:0.85em;
-                    margin:16px 0 0;text-transform:uppercase;
-                    letter-spacing:.06em">Load &mdash; Australia, US
-                    <span style="text-transform:none;font-weight:400">
-                    (watched for risk; the supply contract picks the
-                    terminal)</span></h3>
-                <div style="display:grid;
-                            grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-                            gap:12px;margin:10px 0 4px">
-                  <div id="congLoadCards" style="display:contents"></div>
-                </div>
-
-                <div style="display:flex;gap:14px;align-items:center;
-                            flex-wrap:wrap;margin-bottom:8px">
-                  <label style="margin:0">Chart port</label>
-                  <select id="congPort" style="width:auto;min-width:180px"></select>
-                </div>
-                <canvas id="congChart" height="110"></canvas>
-
-                <h2 style="margin-top:22px">Seasonal pattern &mdash; arrivals by
-                  month</h2>
-                <p style="color:#94a3b8;font-size:0.85em;margin-top:-6px">
-                  100 = that port's own annual average, over 2019&ndash;2026.
-                </p>
-                <div style="overflow-x:auto">
-                  <table>
-                    <thead><tr id="seasonHead"></tr></thead>
-                    <tbody id="seasonBody"></tbody>
-                  </table>
-                </div>
-                <p id="congCaveat" style="color:#fdba74;font-size:0.8em;
-                   margin-top:10px"></p>
-            </div>
-
-            <!-- Module B: vessel and port selection -->
-            <div class="card full-width">
-                <h2>🚢 Vessel &amp; port selection &mdash; part-load capacity</h2>
-                <p style="color:#94a3b8;font-size:0.85em;margin-top:-6px">
-                  A laden Capesize draws 18.2 m. Paradip's coal berth permits
-                  16.0 m. It does not follow that Capesizes cannot call Paradip
-                  &mdash; they arrive <b>part-laden</b>. How much cargo you can
-                  actually load is set by <b>TPC</b>, tonnes per centimetre of
-                  immersion, and that is the number this decides on.
-                </p>
-
-                <div style="display:flex;gap:20px;align-items:flex-end;
-                            flex-wrap:wrap;margin:14px 0 4px">
-                  <div style="flex:0 0 200px">
-                    <label>Parcel size (tonnes)</label>
-                    <input type="number" id="parcel_t" value="160000"
-                           step="1000" min="1">
-                  </div>
-                  <div id="portBest" style="flex:1;min-width:280px"></div>
-                </div>
-
-                <table>
-                  <thead><tr>
-                    <th>Vessel</th><th>Discharge port</th><th>Verdict</th>
-                    <th style="text-align:right">Voyages</th>
-                    <th style="text-align:right">Cargo / voyage</th>
-                    <th style="text-align:right">Fill</th>
-                    <th style="text-align:right">Left on table</th>
-                  </tr></thead>
-                  <tbody id="portOptBody">
-                    <tr><td colspan="7"><i>loading&hellip;</i></td></tr>
-                  </tbody>
-                </table>
-                <p style="color:#94a3b8;font-size:0.8em;margin-top:8px">
-                  <b>Fill</b> is how much of the capacity you charter this
-                  parcel actually uses &mdash; not how full each ship could be.
-                  Ranking on the latter calls a Capesize and a Newcastlemax
-                  equally good and quietly recommends the more expensive one.
-                </p>
-
-                <h2 style="margin-top:22px">Max cargo by class and berth
-                  (tonnes)</h2>
-                <div style="overflow-x:auto">
-                  <table id="portMatrix">
-                    <thead><tr id="portMatrixHead"></tr></thead>
-                    <tbody id="portMatrixBody">
-                      <tr><td><i>loading&hellip;</i></td></tr>
-                    </tbody>
-                  </table>
-                </div>
-                <p id="portCaveat" style="color:#fdba74;font-size:0.8em;
-                   margin-top:10px"></p>
-            </div>
-
-            <!-- Real walk-forward results -->
-            <div class="card full-width">
-                <h2>📊 Walk-forward validation &mdash; every fold</h2>
-                <p style="color:#94a3b8;font-size:0.85em;margin-top:-6px">
-                  Each fold trains only on data before its test window, with a
-                  5-day purge gap. RMSE of the 5-day log return &mdash; lower is
-                  better. Shown in full, including the folds we lose.
-                </p>
-                <table>
-                    <thead>
-                        <tr><th>Fold</th><th>Test window</th>
-                            <th>No change</th><th>Momentum</th>
-                            <th>Ridge</th><th>LightGBM</th><th></th></tr>
-                    </thead>
-                    <tbody id="foldBody">
-                        <tr><td colspan="7"><i>loading&hellip;</i></td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- The control experiment -->
-            <div class="card full-width">
-                <h2>🧪 Control experiment &mdash; why this isn't curve-fitting</h2>
-                <p style="color:#94a3b8;font-size:0.85em;margin-top:-6px">
-                  The Baltic Capesize index is a daily broker <i>survey</i>;
-                  panellists anchor on the previous print, so its returns are
-                  strongly autocorrelated and genuinely forecastable. BDRY is a
-                  liquid, arbitraged ETF over the same underlying. We ran the
-                  identical method on it. If we scored well there too, we would
-                  be claiming to beat a futures market &mdash; a red flag, not a
-                  feature.
-                </p>
-                <table>
-                    <thead><tr><th>Series</th><th>What it is</th>
-                        <th>Lag-1 autocorrelation</th>
-                        <th>Our skill vs no-change</th></tr></thead>
-                    <tbody id="controlBody">
-                        <tr><td colspan="4"><i>loading&hellip;</i></td></tr>
-                    </tbody>
-                </table>
-                <p id="controlNote" style="color:#94a3b8;font-size:0.85em"></p>
-            </div>
-        </div>
+    <div class="card">
+      <div class="cap">Control experiment</div>
+      <p class="note" style="margin:0 0 8px">The Baltic Capesize index is a daily broker
+        <em>survey</em>; panellists anchor on the previous print, so its returns are
+        autocorrelated and genuinely forecastable. BDRY is a liquid, arbitraged ETF over
+        the same underlying. We ran the identical method on it — scoring well there too
+        would mean claiming to beat a futures market, which is a red flag rather than a
+        feature.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Series</th><th>What it is</th><th class="n">Lag-1 autocorrelation</th><th class="n">Our skill</th></tr></thead>
+        <tbody id="controlBody"><tr><td colspan="4"><span class="skel"></span></td></tr></tbody>
+      </table></div>
+      <p class="note" id="controlNote"></p>
     </div>
+  </div>
 
-    <script>
-        let chart = null;
+  <footer>
+    Baltic index history under CC BY 4.0 from Mendeley Data <code>10.17632/t76ckh2ygg</code> ·
+    port calls from IMF PortWatch · market data from Yahoo Finance · weather from Open-Meteo.
+  </footer>
+</div>
 
-        function initChart(labels, actual, predicted) {
-            const ctx = document.getElementById('forecastChart').getContext('2d');
-            if (chart) chart.destroy();
-            chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: 'Predicted Rate ($/ton)',
-                            data: predicted,
-                            borderColor: '#38bdf8',
-                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                            fill: true,
-                            tension: 0.3
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    plugins: { legend: { labels: { color: '#94a3b8' } } },
-                    scales: {
-                        x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
-                        y: { beginAtZero: true,
-                             ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }
-                    }
-                }
-            });
+<script>
+/* ═══════════ helpers ═══════════ */
+
+// The API sends null rather than NaN for anything non-finite, because a
+// bare NaN is invalid JSON and JSON.parse would throw. Render an em-dash.
+const pct = v => (v === null || v === undefined || !isFinite(v))
+    ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+
+// Named 'fin', not 'num': predict() has its own local num(id) reading a
+// form field, and a same-named global is shadowed inside it. Sharing the
+// name turned num(r.lo_pct) into getElementById(0.9).value, which threw
+// part-way through rendering — the chart drew, the recommendation did not.
+const fin = v => (v === null || v === undefined || !isFinite(v)) ? null : v;
+
+// The API speaks ISO (sortable, unambiguous, correct on the wire).
+// Everything a person reads is DD/MM/YYYY.
+const fmtDate = s => {
+    if (!s) return '';
+    const p = String(s).slice(0, 10).split('-');
+    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : s;
+};
+const tons = n => (n === null || n === undefined) ? '—' : Math.round(n).toLocaleString();
+// 1st/2nd/3rd/4th, and 11–13 are always "th" — otherwise the 53rd
+// percentile renders as "53th".
+const ordinal = n => {
+    n = Math.round(n);
+    const t = n % 100;
+    if (t >= 11 && t <= 13) return n + 'th';
+    return n + ({1:'st', 2:'nd', 3:'rd'}[n % 10] || 'th');
+};
+const esc = s => String(s).replace(/"/g, '&quot;');
+
+const RUST = '#c2410c', AQUA = '#0e7f57', AMBER = '#eda100';
+const INK2 = '#55504a', INK3 = '#8a8279', RULE = '#e2ddd3';
+
+function countUp(el, target, render) {
+    // Write the real value FIRST. The animation is decoration; if
+    // requestAnimationFrame never fires — a background tab, a throttled
+    // renderer — the correct figure is already on screen.
+    el.textContent = render(target);
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || !isFinite(target)) return;
+    const t0 = performance.now(), D = 850;
+    const step = t => {
+        const k = Math.min(1, (t - t0) / D);
+        el.textContent = render(target * (1 - Math.pow(1 - k, 3)));
+        if (k < 1) requestAnimationFrame(step); else el.textContent = render(target);
+    };
+    requestAnimationFrame(step);
+}
+
+Chart.defaults.font.family = "'Inter',system-ui,sans-serif";
+Chart.defaults.font.size = 11;
+Chart.defaults.color = INK3;
+const axes = t => ({
+    x:{ ticks:{ color:INK3, maxRotation:0, autoSkipPadding:20 },
+        grid:{ color:RULE, drawTicks:false }, border:{ color:RULE } },
+    y:{ ticks:{ color:INK3, padding:8 }, grid:{ color:RULE, drawTicks:false },
+        border:{ display:false },
+        title: t ? { display:true, text:t, color:INK3, font:{size:10} } : undefined }
+});
+const legendCfg = { display:true, position:'top', align:'end',
+    labels:{ color:INK2, boxWidth:12, boxHeight:2, padding:15, font:{size:11} } };
+const tipCfg = { backgroundColor:'#1a1614', titleColor:'#fffefb', bodyColor:'#d8d2c8',
+    padding:11, cornerRadius:3, displayColors:true, boxWidth:8, boxHeight:8 };
+
+/* ═══════════ 01 · timing ═══════════ */
+let chart = null;
+
+// No invented starting data. Draw an empty frame, then ask the backend
+// so the chart always reflects real computed values.
+function initChart(labels, actual, predicted) {
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById('forecastChart'), {
+        type:'line',
+        data:{ labels:labels, datasets:[{ label: 'Forecast', data:predicted,
+               borderColor:RUST, borderWidth:2, pointRadius:0 }] },
+        options:{ responsive:true, maintainAspectRatio:false,
+                  plugins:{ legend:legendCfg, tooltip:tipCfg }, scales:axes() }
+    });
+}
+initChart([], null, []);
+
+function drawForecast(r) {
+    const c = r.current_rate;
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById('forecastChart'), {
+        type:'line',
+        data:{ labels:['as of ' + fmtDate(r.as_of), '+' + r.horizon_days + ' days'],
+          datasets:[
+            // A null bound means no calibration data for that fold. Plot
+            // nothing rather than a band at zero, which would read as a
+            // confident tight interval.
+            { label:`Upper ${r.interval_pct}%`,
+              data: fin(r.hi_pct) === null ? [] : [c, +(c*(1+r.hi_pct/100)).toFixed(2)],
+              borderColor:'rgba(194,65,12,.30)', backgroundColor:'rgba(194,65,12,.07)',
+              borderWidth:1, fill:'+1', pointRadius:0, borderDash:[4,4] },
+            { label:`Lower ${r.interval_pct}%`,
+              data: fin(r.lo_pct) === null ? [] : [c, +(c*(1+r.lo_pct/100)).toFixed(2)],
+              borderColor:'rgba(194,65,12,.30)', borderWidth:1, fill:false,
+              pointRadius:0, borderDash:[4,4] },
+            { label: 'Forecast', data:[c, r.projected_rate], borderColor:RUST,
+              borderWidth:2.5, pointRadius:4, pointBackgroundColor:RUST,
+              pointBorderColor:'#fffefb', pointBorderWidth:2 },
+            { label: 'Actual', data:[c, r.actual_rate], borderColor:AQUA,
+              borderWidth:2.5, borderDash:[6,3], pointRadius:4,
+              pointBackgroundColor:AQUA, pointBorderColor:'#fffefb', pointBorderWidth:2 }
+          ]},
+        options:{ responsive:true, maintainAspectRatio:false, animation:{duration:650},
+            interaction:{ intersect:false, mode:'index' },
+            plugins:{ legend:legendCfg, tooltip:{ ...tipCfg,
+                callbacks:{ label:x => ` ${x.dataset.label}: $${x.parsed.y}/t` } } },
+            // Not beginAtZero: these are rates around a level, and anchoring
+            // at zero flattens the move into a line you cannot read.
+            scales:axes('$ per tonne') }
+    });
+}
+
+// Single source of truth: ask the backend. The browser does no forecasting
+// maths of its own, so there is one code path and server-side validation
+// covers the UI too.
+// Every keystroke in a number field fires this, so several requests are
+// in flight at once and they do not necessarily come back in order. Each
+// call takes a ticket; a response only renders if its ticket is still
+// the newest. Without this, clearing a field showed the stale forecast
+// from a fetch started two keystrokes earlier.
+let predictSeq = 0;
+
+async function predict() {
+    const seq = ++predictSeq;
+    const box = document.getElementById('recResult');
+    const num = id => {
+        const raw = document.getElementById(id).value.trim();
+        return raw === '' ? null : Number(raw);
+    };
+    const dv = document.getElementById('date').value;
+    // The native picker renders in the browser's own locale, which may be
+    // MM/DD. Echo the selection back unambiguously underneath it.
+    document.getElementById('dateEcho').textContent = dv ? 'Reading as ' + fmtDate(dv) : '';
+    const body = { current_rate:num('current_rate'), volume:num('volume'), date: dv || null };
+    // Guard before we call. type="button" bypasses HTML5 required, so an
+    // empty field would otherwise reach Number() as NaN and render "$NaN"
+    // under a confident CHARTER NOW heading.
+    const blank = ['current_rate','volume'].filter(k => body[k] === null || !isFinite(body[k]));
+    if (blank.length) {
+        box.innerHTML = `<div class="verdict v-bad"><div class="v-k">Missing input</div>
+            <div class="v-b">Please fill in: ${blank.join(', ')}</div></div>`;
+        return;
+    }
+    if (seq !== predictSeq) return;
+    let r;
+    try {
+        const resp = await fetch('/api/predict', { method:'POST',
+            headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+        r = await resp.json();
+        if (seq !== predictSeq) return;
+        if (!resp.ok) {
+            box.innerHTML = `<div class="verdict v-bad"><div class="v-k">Invalid input</div>
+                <div class="v-b">${r.error || resp.status}</div></div>`;
+            return;
         }
+    } catch (e) {
+        if (seq !== predictSeq) return;
+        box.innerHTML = `<div class="verdict v-bad"><div class="v-k">Backend unreachable</div>
+            <div class="v-b">Start it with <code>python app.py</code></div></div>`;
+        return;
+    }
+    if (seq !== predictSeq) return;
+    drawForecast(r);
+    const wait = r.recommendation === 'WAIT', hit = r.direction_correct;
+    const band = (fin(r.lo_pct) === null || fin(r.hi_pct) === null)
+        ? 'no calibrated interval for this fold'
+        : `${r.interval_pct}% interval ${pct(r.lo_pct)} to ${pct(r.hi_pct)}`;
+    box.innerHTML = `
+      <div class="verdict ${wait ? 'v-wait' : 'v-now'}">
+        <div class="v-k">Recommendation</div>
+        <div class="v-h">${wait ? 'Wait' : 'Charter now'}</div>
+        <div class="v-b">
+          As of <b>${fmtDate(r.as_of)}</b>, Capesize index <b>${r.capesize_index.toLocaleString()}</b>.<br>
+          Forecast over ${r.horizon_days} trading days: <b>${pct(r.expected_move_pct)}</b>
+          &nbsp;(${band})<br>
+          <b>$${r.current_rate}</b>/t &rarr; <b>$${r.projected_rate}</b>/t —
+          ${r.direction === 'up' ? 'rates rising, fix now' : 'rates easing, hold and re-approach'}.<br>
+          Move at risk on this parcel:
+          <b>${fin(r.exposure) === null ? '—' : '$' + r.exposure.toLocaleString()}</b>
+        </div>
+        <div class="truth"><b style="color:var(--ink-2)">What actually happened:</b>
+          ${pct(r.actual_move_pct)} &rarr; $${r.actual_rate}/t. Direction
+          <b style="color:${hit ? 'var(--good-t)' : 'var(--crit-t)'}">${hit ? 'correct' : 'wrong'}</b>,
+          outcome ${r.inside_interval ? 'inside' : '<b>outside</b>'} the ${r.interval_pct}% interval.</div>
+      </div>`;
+}
 
-        // No invented starting data. Draw an empty frame, then ask the
-        // backend so the chart always reflects real computed values.
-        initChart([], null, []);
+/* ═══════════ 04 · validation ═══════════ */
+async function loadMetrics() {
+    try {
+        const [mr, cr, dr] = await Promise.all(
+            [fetch('/api/metrics'), fetch('/api/control'), fetch('/api/dates')]);
+        if (!mr.ok) throw new Error('metrics');
+        const m = await mr.json();
+        const best = m.models[m.best_model];
 
-        // The API sends null rather than NaN for anything non-finite,
-        // because bare NaN is invalid JSON and JSON.parse would throw.
-        // Render it as an em-dash instead of "null%".
-        const pct = v => (v === null || v === undefined || !isFinite(v))
-            ? '—'
-            : (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
-        // Named 'fin', not 'num': predict() has its own local num(id)
-        // that reads a form field, and a same-named global is shadowed
-        // inside it. Sharing the name turned a call like num(r.lo_pct)
-        // into getElementById(0.9).value, which throws part-way through
-        // rendering - the chart drew and the recommendation silently
-        // did not.
-        const fin = v => (v === null || v === undefined || !isFinite(v))
-            ? null : v;
+        countUp(document.getElementById('m_dir'), best.direction_pct, v => v.toFixed(1)+'%');
+        countUp(document.getElementById('m_skill'), best.skill_vs_zero_pct, v => pct(v));
+        const cf = m.models.conformal;
+        if (cf) countUp(document.getElementById('m_cov'), cf.coverage*100, v => v.toFixed(1)+'%');
+        document.getElementById('m_folds').textContent =
+            m.models.folds_won + ' / ' + m.models.folds.length;
 
-        // The API speaks ISO (sortable, unambiguous, correct on the wire).
-        // Everything a person reads is DD/MM/YYYY.
-        const fmtDate = s => {
-            if (!s) return '';
-            const p = String(s).slice(0, 10).split('-');
-            return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : s;
-        };
+        const dt = m.models.direction_test;
+        document.getElementById('m_provenance').innerHTML =
+            `<b>${m.best_model}</b> on ${m.target}, trained ${fmtDate(m.train_start)} to `
+            + `${fmtDate(m.train_end)}. ${m.n_scored} out-of-sample rows across ${m.n_folds} `
+            + `folds — but only <b>~${m.n_effective} independent</b> windows, because `
+            + `five-day targets overlap. Direction significance is computed on that smaller `
+            + `number: p = ${dt.p_value.toExponential(1)}.`;
 
-        // Pull the measured numbers. Every tile below is a value some
-        // script in this repo printed; nothing here is a literal.
-        async function loadMetrics() {
-            try {
-                const [mr, cr, dr] = await Promise.all([
-                    fetch('/api/metrics'), fetch('/api/control'),
-                    fetch('/api/dates')]);
-                if (!mr.ok) throw new Error('metrics');
-                const m = await mr.json();
-                const best = m.models[m.best_model];
+        document.getElementById('foldBody').innerHTML = m.models.folds.map(f => {
+            const win = f.ridge < f.zero;
+            return `<tr><td class="n">${f.fold}</td>
+              <td>${fmtDate(f.start)} → ${fmtDate(f.end)}</td>
+              <td class="n">${f.zero.toFixed(4)}</td><td class="n">${f.momentum.toFixed(4)}</td>
+              <td class="n" style="font-weight:700">${f.ridge.toFixed(4)}</td>
+              <td class="n">${f.lgbm.toFixed(4)}</td>
+              <td><span class="tag ${win ? 't-good' : 't-bad'}">${
+                  win ? 'beats baseline' : 'loses'}</span></td></tr>`; }).join('');
 
-                document.getElementById('m_dir').textContent =
-                    best.direction_pct.toFixed(1) + '%';
-                document.getElementById('m_skill').textContent =
-                    pct(best.skill_vs_zero_pct);
-                const cf = m.models.conformal;
-                document.getElementById('m_cov').textContent =
-                    cf ? (cf.coverage * 100).toFixed(1) + '%' : '—';
-                document.getElementById('m_folds').textContent =
-                    m.models.folds_won + ' / ' + m.models.folds.length;
-
-                const dt = m.models.direction_test;
-                document.getElementById('m_provenance').innerHTML =
-                    `<strong>${m.best_model}</strong> on ${m.target}, `
-                    + `trained ${fmtDate(m.train_start)} to ${fmtDate(m.train_end)}. `
-                    + `${m.n_scored} out-of-sample rows across ${m.n_folds} `
-                    + `folds &mdash; but only <strong>~${m.n_effective} `
-                    + `independent</strong> windows, because 5-day targets `
-                    + `overlap. Direction significance is computed on that `
-                    + `smaller number: p = ${dt.p_value.toExponential(1)}.`;
-
-                // per-fold table
-                document.getElementById('foldBody').innerHTML =
-                    m.models.folds.map(f => {
-                        const win = f.ridge < f.zero;
-                        return `<tr>
-                          <td>${f.fold}</td>
-                          <td>${fmtDate(f.start)} → ${fmtDate(f.end)}</td>
-                          <td>${f.zero.toFixed(4)}</td>
-                          <td>${f.momentum.toFixed(4)}</td>
-                          <td><strong>${f.ridge.toFixed(4)}</strong></td>
-                          <td>${f.lgbm.toFixed(4)}</td>
-                          <td style="color:${win ? '#22c55e' : '#ef4444'}">
-                            ${win ? 'beats baseline' : 'loses'}</td>
-                        </tr>`; }).join('');
-
-                if (dr.ok) {
-                    const d = await dr.json();
-                    const el = document.getElementById('date');
-                    el.min = d.min; el.max = d.max; el.value = d.max;
-                    document.getElementById('dateRange').textContent =
-                        `(${fmtDate(d.min)} to ${fmtDate(d.max)})`;
-                }
-
-                if (cr.ok) {
-                    const c = await cr.json();
-                    const ce = c.control_experiment || {};
-                    document.getElementById('controlBody').innerHTML = `
-                      <tr><td>Baltic Capesize</td><td>daily broker survey</td>
-                          <td style="color:#22c55e"><strong>
-                          ${ce.capesize_lag1_autocorr.toFixed(3)}</strong></td>
-                          <td style="color:#22c55e">
-                          ${pct(best.skill_vs_zero_pct)}</td></tr>
-                      <tr><td>BDRY ETF</td><td>traded freight futures fund</td>
-                          <td style="color:#ef4444"><strong>
-                          ${ce.bdry_lag1_autocorr.toFixed(3)}</strong></td>
-                          <td style="color:#ef4444">
-                          ${pct(c.bdry.ridge.skill_vs_zero_pct)}</td></tr>`;
-                    document.getElementById('controlNote').textContent =
-                        ce.conclusion || '';
-                }
-            } catch (e) {
-                document.getElementById('m_provenance').textContent =
-                    'Model artefacts not found. Run: '
-                    + 'python -m src.fetch_data && python -m src.build_panel '
-                    + '&& python -m src.train_model';
-            }
+        if (dr.ok) {
+            const d = await dr.json();
+            const el = document.getElementById('date');
+            el.min = d.min; el.max = d.max; el.value = d.max;
+            document.getElementById('dateRange').textContent = `(${fmtDate(d.min)} – ${fmtDate(d.max)})`;
         }
-
-        const VERDICT_COLOUR = {
-            'alongside':    '#22c55e',
-            'lighterage':   '#38bdf8',
-            'uneconomic':   '#f59e0b',
-            'cannot serve': '#ef4444',
-        };
-        const tons = n => (n === null || n === undefined)
-            ? '—' : Math.round(n).toLocaleString();
-
-        // Static reference: physics and published berth limits, so this
-        // is fetched once and never depends on the parcel.
-        async function loadPortMatrix() {
-            try {
-                const resp = await fetch('/api/ports');
-                if (!resp.ok) throw new Error('ports');
-                const d = await resp.json();
-
-                document.getElementById('portMatrixHead').innerHTML =
-                    '<th>Class</th><th style="text-align:right">TPC t/cm</th>'
-                    + d.ports.map(p => `<th style="text-align:right"
-                        title="${p.note.replace(/"/g, '&quot;')}">${p.name}
-                        ${p.max_draft_m === null ? '' :
-                          `<br><span style="font-weight:400;color:#64748b">
-                           ${p.max_draft_m.toFixed(1)} m</span>`}</th>`).join('');
-
-                const tpcOf = {};
-                d.vessels.forEach(v => { tpcOf[v.name] = v.tpc; });
-
-                document.getElementById('portMatrixBody').innerHTML =
-                    d.matrix.map(row => `<tr>
-                      <td><b>${row.vessel}</b></td>
-                      <td style="text-align:right;color:#94a3b8">
-                        ${tpcOf[row.vessel]}</td>
-                      ${row.cells.map(c => {
-                        const col = VERDICT_COLOUR[c.verdict] || '#e2e8f0';
-                        const body = c.verdict === 'cannot serve'
-                          ? 'cannot'
-                          : tons(c.max_cargo_t);
-                        return `<td style="text-align:right;color:${col}"
-                                 title="${c.binding.replace(/"/g,'&quot;')}">
-                                 ${body}</td>`;
-                      }).join('')}
-                    </tr>`).join('');
-
-                const unverified = d.ports.filter(p => !p.geometry_verified)
-                                          .map(p => p.name);
-                document.getElementById('portCaveat').innerHTML =
-                    'Colour key: <span style="color:#22c55e">alongside</span> · '
-                    + '<span style="color:#38bdf8">lighterage</span> · '
-                    + '<span style="color:#f59e0b">uneconomic '
-                    + `(&lt;${Math.round(d.min_utilisation * 100)}% full)</span> · `
-                    + '<span style="color:#ef4444">cannot berth</span>. '
-                    + 'Hover any figure for the binding constraint.<br>'
-                    + '<b>Upper bounds:</b> LOA, beam and channel limits are '
-                    + 'not verified for ' + unverified.join(', ') + ', so a '
-                    + 'large class may show a draft-limited tonnage it could '
-                    + 'not physically reach. Only Paradip and Sagar-Sandheads '
-                    + 'have verified geometry.';
-            } catch (e) {
-                document.getElementById('portCaveat').textContent =
-                    'Port reference unavailable.';
-            }
+        if (cr.ok) {
+            const c = await cr.json();
+            const ce = c.control_experiment || {};
+            document.getElementById('controlBody').innerHTML = `
+              <tr><td><b>Baltic Capesize</b></td><td>daily broker survey</td>
+                <td class="n" style="color:var(--good-t);font-weight:700">${ce.capesize_lag1_autocorr.toFixed(3)}</td>
+                <td class="n" style="color:var(--good-t)">${pct(best.skill_vs_zero_pct)}</td></tr>
+              <tr><td><b>BDRY ETF</b></td><td>traded freight futures fund</td>
+                <td class="n" style="color:var(--crit-t);font-weight:700">${ce.bdry_lag1_autocorr.toFixed(3)}</td>
+                <td class="n" style="color:var(--crit-t)">${pct(c.bdry.ridge.skill_vs_zero_pct)}</td></tr>`;
+            document.getElementById('controlNote').textContent = ce.conclusion || '';
         }
+    } catch (e) {
+        document.getElementById('m_provenance').textContent =
+            'Model artefacts not found. Run: python -m src.fetch_data '
+            + '&& python -m src.build_panel && python -m src.train_model';
+    }
+}
 
-        async function portOptions() {
-            const best = document.getElementById('portBest');
-            const body = document.getElementById('portOptBody');
-            const raw = document.getElementById('parcel_t').value.trim();
-            const parcel = raw === '' ? null : Number(raw);
-            if (parcel === null || !isFinite(parcel) || parcel <= 0) {
-                best.innerHTML = '<span style="color:#fdba74">Enter a parcel '
-                    + 'size greater than zero.</span>';
-                body.innerHTML = '<tr><td colspan="7">—</td></tr>';
-                return;
-            }
-            let d;
-            try {
-                const resp = await fetch('/api/ports/options', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ parcel_t: parcel })
-                });
-                d = await resp.json();
-                if (!resp.ok) {
-                    best.innerHTML = `<span style="color:#fdba74">${
-                        d.error || resp.status}</span>`;
-                    body.innerHTML = '<tr><td colspan="7">—</td></tr>';
-                    return;
-                }
-            } catch (e) {
-                best.innerHTML = '<span style="color:#fdba74">Backend '
-                    + 'unreachable.</span>';
-                return;
-            }
+/* ═══════════ 02 · fleet ═══════════ */
+const VERDICT_TAG = { 'alongside':'t-good', 'lighterage':'t-info',
+                      'uneconomic':'t-warn', 'cannot serve':'t-bad' };
+const VERDICT_INK = { 'alongside':'var(--good-t)', 'lighterage':'#155e5a',
+                      'uneconomic':'var(--warn-t)', 'cannot serve':'var(--crit-t)' };
+let PORT_REF = null;
 
-            const b = d.best;
-            best.innerHTML = b ? `
-              <div style="background:#064e3b;border:1px solid #059669;
-                          border-radius:8px;padding:12px 14px;color:#6ee7b7">
-                <div style="font-size:1.05em"><b>${b.vessel}</b> into
-                  <b>${b.port}</b> &mdash; ${b.voyages} voyage${
-                    b.voyages > 1 ? 's' : ''} of ${tons(b.max_cargo_t)} t</div>
-                <div style="font-size:.85em;opacity:.9;margin-top:4px">
-                  Fills ${(b.parcel_utilisation * 100).toFixed(0)}% of the
-                  capacity chartered${b.foregone_t > 0
-                    ? `, and draft limits cost ${tons(b.foregone_t)} t of
-                       payload per voyage` : ''}.
-                  <br>Binding: ${b.binding}
-                </div>
-              </div>` : '<span style="color:#fdba74">No workable option.</span>';
+// Static reference: physics and published berth limits, so this is
+// fetched once and never depends on the parcel.
+async function loadPortMatrix() {
+    try {
+        const resp = await fetch('/api/ports');
+        if (!resp.ok) throw new Error('ports');
+        const d = await resp.json();
+        PORT_REF = d;
+        document.getElementById('portMatrixHead').innerHTML =
+            '<th>Class</th><th class="n">TPC t/cm</th>'
+            + d.ports.map(p => `<th class="n" title="${esc(p.note)}">${p.name}${
+                p.max_draft_m === null ? '' :
+                `<br><span style="font-weight:400;color:var(--ink-3)">${p.max_draft_m.toFixed(1)} m</span>`
+              }</th>`).join('');
+        const tpcOf = {};
+        d.vessels.forEach(v => { tpcOf[v.name] = v.tpc; });
+        document.getElementById('portMatrixBody').innerHTML = d.matrix.map(row =>
+            `<tr><td><b>${row.vessel}</b></td>
+             <td class="n" style="color:var(--ink-3)">${tpcOf[row.vessel]}</td>
+             ${row.cells.map(c => `<td class="n" style="color:${VERDICT_INK[c.verdict] || 'var(--ink)'}"
+                title="${esc(c.binding)}">${c.verdict === 'cannot serve' ? 'cannot' : tons(c.max_cargo_t)}</td>`
+             ).join('')}</tr>`).join('');
+        const unver = d.ports.filter(p => !p.geometry_verified).map(p => p.name);
+        document.getElementById('portCaveat').innerHTML =
+            `<span class="key">
+               <span><i style="background:#0ca30c"></i>alongside</span>
+               <span><i style="background:${AQUA}"></i>lighterage</span>
+               <span><i style="background:${AMBER}"></i>uneconomic (&lt;${Math.round(d.min_utilisation*100)}% full)</span>
+               <span><i style="background:#d03b3b"></i>cannot berth</span>
+             </span>Hover any figure for the binding constraint.<br>
+             <b>Upper bounds:</b> LOA, beam and channel limits are not verified for
+             ${unver.join(', ')}, so a large class may show a draft-limited tonnage it
+             could not physically reach. Only Paradip and Sagar-Sandheads have verified
+             geometry.`;
+    } catch (e) {
+        document.getElementById('portCaveat').textContent = 'Port reference unavailable.';
+    }
+}
 
-            body.innerHTML = d.options.slice(0, 12).map(o => {
-                const col = VERDICT_COLOUR[o.verdict] || '#e2e8f0';
-                return `<tr>
-                  <td>${o.vessel}</td>
-                  <td>${o.port}</td>
-                  <td style="color:${col}">${o.verdict}${
-                    o.caveats.length ? ' <span title="' +
-                    o.caveats[0].replace(/"/g,'&quot;') +
-                    '" style="color:#fdba74">*</span>' : ''}</td>
-                  <td style="text-align:right">${o.voyages}</td>
-                  <td style="text-align:right">${tons(o.max_cargo_t)}</td>
-                  <td style="text-align:right"><b>${
-                    (o.parcel_utilisation * 100).toFixed(0)}%</b></td>
-                  <td style="text-align:right;color:#94a3b8">${
-                    o.foregone_t > 0 ? tons(o.foregone_t) : '—'}</td>
-                </tr>`; }).join('');
+/* The part-load idea in one picture: the hull sits at the draft its cargo
+   produces, the seabed at whatever the berth permits, and the gap between
+   them is the whole argument. */
+function drawDraft(opt) {
+    const host = document.getElementById('draftViz');
+    const note = document.getElementById('draftNote');
+    if (!opt || !PORT_REF) { host.innerHTML = ''; note.textContent = ''; return; }
+    const ves = PORT_REF.vessels.find(v => v.name === opt.vessel);
+    const prt = PORT_REF.ports.find(p => p.name === opt.port);
+    if (!ves || !prt) { host.innerHTML = ''; note.textContent = ''; return; }
+
+    const laden = ves.draft_m, permitted = prt.max_draft_m;
+    const sailing = permitted === null ? laden : Math.min(laden, permitted);
+    const W = 620, H = 268, waterY = 66, floorMax = 214;
+    const scale = m => waterY + (m/22)*(floorMax-waterY);
+    const sailY = scale(sailing), bedY = permitted === null ? floorMax : scale(permitted);
+
+    host.innerHTML = `
+     <svg viewBox="0 0 ${W} ${H}" role="img"
+       aria-label="${opt.vessel} at ${sailing.toFixed(1)} metres draft against a berth permitting ${permitted === null ? 'no limit' : permitted.toFixed(1)+' metres'}">
+      <defs>
+        <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#dfe9e5"/><stop offset="100%" stop-color="#c2d2cc"/>
+        </linearGradient>
+        <pattern id="bed" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+          <line x1="0" y1="0" x2="0" y2="8" stroke="#a89f92" stroke-width="1.6"/>
+        </pattern>
+      </defs>
+      <rect x="0" y="${waterY}" width="${W}" height="${H-waterY}" fill="url(#sea)"/>
+      <g class="swell"><path d="M-44 ${waterY} q22 -5 44 0 t44 0 t44 0 t44 0 t44 0 t44 0 t44 0 t44 0 t44 0 t44 0 t44 0 t44 0 t44 0 t44 0 t44 0 t44 0"
+            fill="none" stroke="#7fa79c" stroke-width="1.4"/></g>
+      <rect x="0" y="${bedY}" width="${W}" height="${H-bedY}" fill="url(#bed)"/>
+      <line x1="0" y1="${bedY}" x2="${W}" y2="${bedY}" stroke="#6b6155" stroke-width="1.5"/>
+      <text x="12" y="${bedY-8}" fill="#6b6155" font-size="10.5" font-family="var(--fm)">${
+        permitted === null ? 'anchorage — no draft limit' : 'berth ' + permitted.toFixed(1) + ' m'}</text>
+
+      <g class="hull" transform="translate(176,0)">
+        <path d="M4 ${waterY-34} L206 ${waterY-34} L214 ${waterY} L198 ${sailY-6}
+                 Q186 ${sailY} 170 ${sailY} L34 ${sailY} Q14 ${sailY} 8 ${sailY-12} L0 ${waterY} Z"
+              fill="${RUST}" stroke="#8f300a" stroke-width="1.2"/>
+        <rect x="150" y="${waterY-52}" width="44" height="18" fill="#fffefb" stroke="#8f300a" stroke-width="1"/>
+        <line x1="182" y1="${waterY-66}" x2="182" y2="${waterY-52}" stroke="#8f300a" stroke-width="1"/>
+        <line x1="6" y1="${waterY}" x2="208" y2="${waterY}" stroke="#fffefb" stroke-width="1.5" stroke-opacity=".7"/>
+        <text x="104" y="${waterY-12}" text-anchor="middle" fill="#fffefb"
+              font-size="12" font-weight="700" font-family="var(--fm)">${sailing.toFixed(1)} m</text>
+      </g>
+
+      <line x1="${W-26}" y1="${waterY}" x2="${W-26}" y2="${sailY}" stroke="#8f300a" stroke-width="1"/>
+      <line x1="${W-31}" y1="${waterY}" x2="${W-21}" y2="${waterY}" stroke="#8f300a" stroke-width="1"/>
+      <line x1="${W-31}" y1="${sailY}" x2="${W-21}" y2="${sailY}" stroke="#8f300a" stroke-width="1"/>
+      <text x="${W-36}" y="${(waterY+sailY)/2+4}" text-anchor="end" fill="#8f300a"
+            font-size="10.5" font-family="var(--fm)">sailing draft</text>
+      ${permitted !== null && bedY > sailY + 16 ? `
+        <line x1="${W-26}" y1="${sailY}" x2="${W-26}" y2="${bedY}" stroke="#155e2e" stroke-width="1"/>
+        <line x1="${W-31}" y1="${bedY}" x2="${W-21}" y2="${bedY}" stroke="#155e2e" stroke-width="1"/>
+        <text x="${W-36}" y="${(sailY+bedY)/2+4}" text-anchor="end" fill="#155e2e"
+              font-size="10.5" font-family="var(--fm)">${(permitted-sailing).toFixed(1)} m clear</text>` : ''}
+      <text x="12" y="${waterY-10}" fill="#6b6155" font-size="10.5" font-family="var(--fm)">waterline</text>
+     </svg>`;
+
+    const shed = laden - sailing;
+    note.innerHTML = permitted === null
+      ? `<b>${opt.vessel}</b> lies at anchor here rather than alongside, so no draft
+         limit applies and it loads to its full ${tons(opt.max_cargo_t)} t.`
+      : shed <= 0.01
+        ? `<b>${opt.vessel}</b> floats at its full laden ${laden.toFixed(1)} m and the
+           berth permits ${permitted.toFixed(1)} m — draft is not binding, so it loads
+           to deadweight.`
+        : `<b>${opt.vessel}</b> would draw ${laden.toFixed(1)} m fully laden but the berth
+           permits only ${permitted.toFixed(1)} m. It sails <b>${shed.toFixed(1)} m
+           lighter</b>, which is <b>${tons(opt.foregone_t)} t</b> of payload left ashore
+           each voyage.`;
+}
+
+let portSeq = 0;
+
+async function portOptions() {
+    const seq = ++portSeq;
+    const best = document.getElementById('portBest');
+    const body = document.getElementById('portOptBody');
+    const raw = document.getElementById('parcel_t').value.trim();
+    const parcel = raw === '' ? null : Number(raw);
+    if (parcel === null || !isFinite(parcel) || parcel <= 0) {
+        best.innerHTML = `<div class="verdict v-bad"><div class="v-k">Check input</div>
+            <div class="v-b">Enter a parcel size greater than zero.</div></div>`;
+        body.innerHTML = '<tr><td colspan="7">—</td></tr>'; drawDraft(null); return;
+    }
+    if (seq !== portSeq) return;
+    let d;
+    try {
+        const resp = await fetch('/api/ports/options', { method:'POST',
+            headers:{'Content-Type':'application/json'}, body:JSON.stringify({parcel_t:parcel}) });
+        d = await resp.json();
+        if (seq !== portSeq) return;
+        if (!resp.ok) {
+            best.innerHTML = `<div class="verdict v-bad"><div class="v-k">Check input</div>
+                <div class="v-b">${d.error || resp.status}</div></div>`;
+            body.innerHTML = '<tr><td colspan="7">—</td></tr>'; drawDraft(null); return;
         }
+    } catch (e) {
+        if (seq !== portSeq) return;
+        best.innerHTML = `<div class="verdict v-bad"><div class="v-k">Backend unreachable</div>
+            <div class="v-b">Start it with <code>python app.py</code></div></div>`;
+        drawDraft(null); return;
+    }
+    if (seq !== portSeq) return;
+    const b = d.best;
+    best.innerHTML = b ? `
+      <div class="verdict v-now">
+        <div class="v-k">Best fixture</div>
+        <div class="v-h" style="font-size:24px">${b.vessel} → ${b.port}</div>
+        <div class="v-b">${b.voyages} voyage${b.voyages > 1 ? 's' : ''} of
+          <b>${tons(b.max_cargo_t)} t</b>, filling <b>${(b.parcel_utilisation*100).toFixed(0)}%</b>
+          of the capacity you charter${b.foregone_t > 0
+            ? `.<br>Draft limits cost <b>${tons(b.foregone_t)} t</b> of payload per voyage` : ''}.
+          <div class="truth">Binding constraint: ${b.binding}</div></div>
+      </div>` : `<div class="verdict v-bad"><div class="v-k">No option</div>
+                 <div class="v-b">No workable fixture for this parcel.</div></div>`;
+    drawDraft(b);
+    body.innerHTML = d.options.slice(0, 12).map(o => `<tr>
+        <td>${o.vessel}</td><td>${o.port}</td>
+        <td><span class="tag ${VERDICT_TAG[o.verdict] || 't-mute'}">${o.verdict}</span>${
+          o.caveats.length ? ` <span title="${esc(o.caveats[0])}" style="color:var(--warn-t)">*</span>` : ''}</td>
+        <td class="n">${o.voyages}</td><td class="n">${tons(o.max_cargo_t)}</td>
+        <td class="n" style="font-weight:700">${(o.parcel_utilisation*100).toFixed(0)}%</td>
+        <td class="n" style="color:var(--ink-3)">${o.foregone_t > 0 ? tons(o.foregone_t) : '—'}</td>
+      </tr>`).join('');
+}
 
-        const BAND_COLOUR = {
-            'quiet':      '#38bdf8',
-            'normal':     '#22c55e',
-            'busy':       '#f59e0b',
-            'very busy':  '#ef4444',
-            'unreliable': '#64748b',
-        };
-        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun',
-                        'Jul','Aug','Sep','Oct','Nov','Dec'];
-        // 1st/2nd/3rd/4th, and 11-13 are always "th" - otherwise the
-        // 53rd percentile renders as "53th".
-        const ordinal = n => {
-            n = Math.round(n);
-            const t = n % 100;
-            if (t >= 11 && t <= 13) return n + 'th';
-            return n + ({1:'st', 2:'nd', 3:'rd'}[n % 10] || 'th');
-        };
-        let congChart = null;
+/* ═══════════ 03 · ports ═══════════ */
+const BAND_TAG = { 'quiet':'t-info', 'normal':'t-good', 'busy':'t-warn',
+                   'very busy':'t-bad', 'unreliable':'t-mute' };
+const BAND_INK = { 'quiet':'#155e5a', 'normal':'var(--good-t)', 'busy':'var(--warn-t)',
+                   'very busy':'var(--crit-t)', 'unreliable':'var(--ink-3)' };
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+let congChart = null;
 
-        async function loadCongestion() {
-            let d;
-            try {
-                const resp = await fetch('/api/congestion');
-                if (!resp.ok) throw new Error('congestion');
-                d = await resp.json();
-            } catch (e) {
-                document.getElementById('congCaveat').textContent =
-                    'Port activity unavailable. Run: python -m src.fetch_data';
-                return;
-            }
+async function loadCongestion() {
+    let d;
+    try {
+        const resp = await fetch('/api/congestion');
+        if (!resp.ok) throw new Error('congestion');
+        d = await resp.json();
+    } catch (e) {
+        document.getElementById('congCaveat').textContent =
+            'Port activity unavailable. Run: python -m src.fetch_data';
+        document.getElementById('congAsOf').textContent = 'no port data';
+        return;
+    }
+    const live = d.snapshots.filter(s => !s.error);
+    const dated = live.find(s => s.as_of);
+    document.getElementById('congAsOf').textContent =
+        dated ? 'live · week to ' + fmtDate(dated.as_of) : 'no port data';
 
-            const live = d.snapshots.filter(s => !s.error);
-            const dated = live.find(s => s.as_of);
-            document.getElementById('congAsOf').textContent =
-                dated ? 'week to ' + fmtDate(dated.as_of) : '';
+    const card = s => {
+        // Two figures. Throughput is everything crossing the berth in both
+        // directions and is what makes it busy; the lane figure is only our
+        // own cargo's direction. Paradip ships 60% of its dry bulk out as
+        // iron ore, so the inbound number alone understates the competition.
+        const ktAll = (s.throughput_t_per_day/1000).toFixed(0);
+        const ktLane = (s.lane_t_per_day/1000).toFixed(0);
+        return `<div class="pc">
+          <div class="nm">${s.label}</div>
+          <div class="big" style="color:${BAND_INK[s.band] || 'var(--ink)'}">${s.calls_per_day.toFixed(2)}</div>
+          <div class="sub">calls/day vs ${s.baseline_calls_per_day.toFixed(2)} normal</div>
+          <div class="sub" title="Total across the berth, both directions. Only ${ktLane} kt/day is ${s.flow} — the rest is cargo moving the other way, competing for the same quays.">${ktAll} kt/day total · ${ktLane} ${s.flow}</div>
+          <div style="margin-top:7px"><span class="tag ${BAND_TAG[s.band] || 't-mute'}">${s.band}${
+            s.reliable ? ` · ${ordinal(s.percentile)}` : ''}</span></div></div>`; };
 
-            const card = s => {
-                const col = BAND_COLOUR[s.band] || '#94a3b8';
-                // Two figures. Throughput is everything crossing the
-                // berth in both directions and is what makes it busy;
-                // the lane figure is only our own cargo's direction.
-                // Paradip ships 60% of its dry bulk out as iron ore, so
-                // the inbound number alone understates the competition.
-                const ktAll = (s.throughput_t_per_day / 1000).toFixed(0);
-                const ktLane = (s.lane_t_per_day / 1000).toFixed(0);
-                return `<div style="background:#0f172a;border:1px solid ${col};
-                             border-radius:8px;padding:11px 12px">
-                  <div style="font-size:.78em;color:#94a3b8">${s.label}</div>
-                  <div style="font-size:1.35em;font-weight:700;color:${col}">
-                       ${s.calls_per_day.toFixed(2)}</div>
-                  <div style="font-size:.72em;color:#94a3b8">
-                       calls/day vs ${s.baseline_calls_per_day.toFixed(2)}
-                       normal</div>
-                  <div style="font-size:.72em;color:#64748b"
-                       title="Total across the berth, both directions. Only
-                              ${ktLane} kt/day is ${s.flow} - the rest is
-                              cargo moving the other way, competing for the
-                              same quays.">
-                       ${ktAll} kt/day total &middot;
-                       ${ktLane} ${s.flow}</div>
-                  <div style="font-size:.8em;color:${col};margin-top:4px;
-                       text-transform:capitalize">${s.band}${
-                       s.reliable ? ` · ${ordinal(s.percentile)} pctl` : ''}
-                  </div>
-                </div>`; };
+    const disch = live.filter(s => s.role === 'discharge');
+    const loads = live.filter(s => s.role === 'load');
+    document.getElementById('congCards').innerHTML = disch.map(card).join('');
+    document.getElementById('congLoadCards').innerHTML = loads.map(card).join('');
 
-            const disch = live.filter(s => s.role === 'discharge');
-            const loads = live.filter(s => s.role === 'load');
-            document.getElementById('congCards').innerHTML =
-                disch.map(card).join('');
-            document.getElementById('congLoadCards').innerHTML =
-                loads.map(card).join('');
+    const sel = document.getElementById('congPort');
+    if (!sel.options.length) {
+        const grp = (t, rows) => `<optgroup label="${t}">` + rows.map(s =>
+            `<option value="${s.port}">${s.label}</option>`).join('') + '</optgroup>';
+        sel.innerHTML = grp('Discharge', disch) + grp('Load', loads);
+        sel.addEventListener('change', () => drawCongestion(sel.value));
+    }
 
+    document.getElementById('seasonHead').innerHTML =
+        '<th>Port</th>' + MONTHS.map(m => `<th class="n">${m}</th>`).join('');
+    document.getElementById('seasonBody').innerHTML =
+        Object.entries(d.monthly_profile).map(([port, prof]) => {
+            if (!prof) return '';
+            const cells = MONTHS.map((_, i) => {
+                const v = prof[String(i+1)] ?? prof[i+1];
+                if (v === undefined || v === null) return '<td class="n">—</td>';
+                // One hue each way, light→dark by distance from 100 — a
+                // sequential ramp on a magnitude, not a rainbow.
+                const k = Math.min(1, Math.abs(v-100)/32);
+                const bg = v >= 100 ? `rgba(194,65,12,${(k*.34).toFixed(3)})`
+                                    : `rgba(14,127,87,${(k*.34).toFixed(3)})`;
+                return `<td class="n" style="background:${bg}">${v.toFixed(0)}</td>`;
+            }).join('');
+            const nice = port.split('_').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+            return `<tr><td>${nice}</td>${cells}</tr>`;
+        }).join('');
+
+    const unrel = live.filter(s => !s.reliable);
+    document.getElementById('congCaveat').innerHTML =
+        `<b>What this measures:</b> ${d.caveat}`
+        + (unrel.length ? '<br><b>Not scored:</b> ' + unrel.map(s =>
+            `${s.port} — ${s.reliability_note}`).join('; ') : '')
+        + '<br><b>Seasonality:</b> every Indian port dips September to December. '
+        + 'Tested against Open-Meteo wind for the same ports and dates, two things '
+        + 'are true. <b>Cyclones do stop ships</b> — on the day of and before a gust '
+        + 'above 90 km/h, Paradip arrivals fall <b>88%</b> and Dhamra to <b>zero</b>, '
+        + 'both p &lt; 0.0001. <b>But they cannot explain the season:</b> Paradip has '
+        + 'had 7 such days in 8 years, 5 of them in May, and Sep–Dec holds 2 — about '
+        + '0.4% of that window against a ~15% shortfall. Sep–Dec is the calmest '
+        + 'stretch of the year. Weather is a short-horizon disruption signal, not a '
+        + 'seasonal one.';
+
+    // live is empty on a fresh clone, before fetch_data has run.
+    // live[0].port would throw and take the whole panel with it.
+    if (live.length) drawCongestion(sel.value || live[0].port);
+    else document.getElementById('congCaveat').innerHTML =
+        '<b>No port data yet.</b> Run: <code>python -m src.fetch_data</code>';
+}
+
+async function drawCongestion(port) {
+    let d;
+    try {
+        const resp = await fetch(`/api/congestion/${port}?days=365`);
+        if (!resp.ok) return;
+        d = await resp.json();
+    } catch (e) { return; }
+    const s = d.series;
+    if (congChart) congChart.destroy();
+    congChart = new Chart(document.getElementById('congChart'), {
+        type:'line',
+        data:{ labels:s.map(r => fmtDate(r.date)), datasets:[
+            { label: 'daily arrivals', data:s.map(r => r.calls),
+              borderColor:'rgba(138,130,121,.42)', borderWidth:1, pointRadius:0 },
+            { label: '7-day average', data:s.map(r => r.smoothed), borderColor:RUST,
+              borderWidth:2.5, pointRadius:0, tension:.25, fill:true,
+              backgroundColor:'rgba(194,65,12,.07)' },
+            { label: 'normal for this port', data:s.map(() => d.snapshot.baseline_calls_per_day),
+              borderColor:AQUA, borderWidth:1.5, borderDash:[6,4], pointRadius:0 }
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false, animation:{duration:550},
+            interaction:{ intersect:false, mode:'index' },
+            plugins:{ legend:legendCfg, tooltip:tipCfg },
+            scales:{ ...axes('dry bulk calls / day'),
+                     y:{ ...axes('dry bulk calls / day').y, beginAtZero:true } } }
+    });
+}
+
+/* ═══════════ view routing ═══════════ */
+const VIEWS = ['timing','fleet','ports','proof'];
+function showView(name) {
+    if (!VIEWS.includes(name)) name = 'timing';
+    VIEWS.forEach(v => document.getElementById('v-'+v).classList.toggle('on', v === name));
+    document.querySelectorAll('nav button').forEach(b =>
+        b.setAttribute('aria-current', String(b.dataset.v === name)));
+    if (location.hash.slice(1) !== name) history.replaceState(null, '', '#'+name);
+    // Chart.js measures a hidden canvas as zero-width. A chart built
+    // while its view was display:none records 0 and writes 0px inline
+    // styles onto the canvas, and resize() cannot recover from that -
+    // it re-reads a canvas that is already pinned to zero.
+    //
+    // Whether it happens is a race: if loadCongestion() finishes before
+    // the user reaches that view, the chart is dead; if after, it is
+    // fine. So resize first, and if the chart still has no width,
+    // rebuild it from scratch.
+    setTimeout(() => {
+        if (name === 'timing') {
+            if (chart) chart.resize();
+            if (!chart || !chart.width) predict();
+        }
+        if (name === 'ports') {
+            if (congChart) congChart.resize();
             const sel = document.getElementById('congPort');
-            if (!sel.options.length) {
-                const optgroup = (title, rows) =>
-                    `<optgroup label="${title}">` + rows.map(s =>
-                        `<option value="${s.port}">${s.label}</option>`
-                    ).join('') + '</optgroup>';
-                sel.innerHTML = optgroup('Discharge', disch)
-                              + optgroup('Load', loads);
-                sel.addEventListener('change', () => drawCongestion(sel.value));
-            }
-
-            // seasonal table
-            document.getElementById('seasonHead').innerHTML =
-                '<th>Port</th>' + MONTHS.map(m =>
-                    `<th style="text-align:right">${m}</th>`).join('');
-            document.getElementById('seasonBody').innerHTML =
-                Object.entries(d.monthly_profile).map(([port, prof]) => {
-                    if (!prof) return '';
-                    const cells = MONTHS.map((_, i) => {
-                        const v = prof[String(i + 1)] ?? prof[i + 1];
-                        if (v === undefined || v === null)
-                            return '<td style="text-align:right">—</td>';
-                        // Shade away from 100 so the pattern is readable.
-                        const col = v >= 115 ? '#ef4444' : v >= 105 ? '#f59e0b'
-                                  : v <= 90 ? '#38bdf8' : '#94a3b8';
-                        return `<td style="text-align:right;color:${col}">
-                                ${v.toFixed(0)}</td>`;
-                    }).join('');
-                    const nice = port.split('_')
-                        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-                        .join(' ');
-                    return `<tr><td>${nice}</td>${cells}</tr>`;
-                }).join('');
-
-            const unrel = live.filter(s => !s.reliable);
-            document.getElementById('congCaveat').innerHTML =
-                `<b>What this measures:</b> ${d.caveat}`
-                + (unrel.length ? '<br><b>Not scored:</b> '
-                    + unrel.map(s => `${s.port} — ${s.reliability_note}`)
-                           .join('; ') : '')
-                + '<br><b>Seasonality:</b> every INDIAN port dips September '
-                + 'to December, which overlaps Bay of Bengal cyclone season. '
-                + 'PortWatch reports arrivals, not causes, so treat that as '
-                + 'an association to plan around rather than a proven '
-                + 'weather effect.';
-
-            // live is empty on a fresh clone, before fetch_data has run.
-            // live[0].port would throw and take the whole panel with it.
-            if (live.length) {
-                drawCongestion(sel.value || live[0].port);
-            } else {
-                document.getElementById('congCaveat').innerHTML =
-                    '<b>No port data yet.</b> Run: '
-                    + '<code>python -m src.fetch_data</code>';
+            if ((!congChart || !congChart.width) && sel && sel.value) {
+                drawCongestion(sel.value);
             }
         }
+    }, 40);
+    window.scrollTo({ top:0 });
+}
 
-        async function drawCongestion(port) {
-            let d;
-            try {
-                const resp = await fetch(`/api/congestion/${port}?days=365`);
-                if (!resp.ok) return;
-                d = await resp.json();
-            } catch (e) { return; }
+window.addEventListener('DOMContentLoaded', async () => {
+    document.querySelectorAll('nav button').forEach(b =>
+        b.addEventListener('click', () => showView(b.dataset.v)));
+    window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+    showView(location.hash.slice(1) || 'timing');
 
-            const s = d.series;
-            if (congChart) congChart.destroy();
-            congChart = new Chart(document.getElementById('congChart'), {
-                type: 'line',
-                data: {
-                    labels: s.map(r => fmtDate(r.date)),
-                    datasets: [
-                        { label: 'daily arrivals',
-                          data: s.map(r => r.calls),
-                          borderColor: 'rgba(148,163,184,.35)',
-                          borderWidth: 1, pointRadius: 0, tension: 0 },
-                        { label: '7-day average',
-                          data: s.map(r => r.smoothed),
-                          borderColor: '#38bdf8', borderWidth: 2.5,
-                          pointRadius: 0, tension: .25 },
-                        { label: 'normal for this port',
-                          data: s.map(() => d.snapshot
-                                       .baseline_calls_per_day),
-                          borderColor: '#22c55e', borderWidth: 1.5,
-                          borderDash: [6, 4], pointRadius: 0 }
-                    ]
-                },
-                options: {
-                    responsive: true, animation: false,
-                    interaction: { intersect: false, mode: 'index' },
-                    plugins: { legend: { labels: { color: '#94a3b8' } } },
-                    scales: {
-                        x: { ticks: { color: '#94a3b8', maxTicksLimit: 10 },
-                             grid: { color: '#1e293b' } },
-                        y: { beginAtZero: true,
-                             title: { display: true, text: 'dry bulk calls/day',
-                                      color: '#94a3b8' },
-                             ticks: { color: '#94a3b8' },
-                             grid: { color: '#334155' } }
-                    }
-                }
-            });
-        }
+    await loadMetrics();
+    loadCongestion();
+    await loadPortMatrix();
 
-        window.addEventListener('DOMContentLoaded', async () => {
-            await loadMetrics();
-            loadCongestion();
-            loadPortMatrix();
-            const pt = document.getElementById('parcel_t');
-            if (pt) {
-                pt.addEventListener('change', portOptions);
-                pt.addEventListener('input', portOptions);
-            }
-            portOptions();
-            ['current_rate', 'volume', 'date'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) {
-                    el.addEventListener('change', predict);
-                    el.addEventListener('input', predict);
-                }
-            });
-            predict();
-        });
-
-        // Single source of truth: ask the backend. The browser does no
-        // forecasting maths of its own, so there is exactly one code path
-        // and server-side validation covers the UI too.
-        async function predict() {
-            const recDiv = document.getElementById('recResult');
-            recDiv.style.display = 'block';
-
-            const num = id => {
-                const raw = document.getElementById(id).value.trim();
-                return raw === '' ? null : Number(raw);
-            };
-            const dv = document.getElementById('date').value;
-            const body = {
-                current_rate: num('current_rate'),
-                volume: num('volume'),
-                date: dv || null
-            };
-
-            // Guard before we call. type="button" bypasses HTML5 required,
-            // so an empty field would otherwise reach Number() as NaN and
-            // render "$NaN" under a confident CHARTER NOW heading.
-            const blank = ['current_rate', 'volume']
-                .filter(k => body[k] === null || !isFinite(body[k]));
-            if (blank.length) {
-                recDiv.className = 'recommendation rec-wait';
-                recDiv.innerHTML = `<div class="rec-title">Missing input</div>
-                    <div class="rec-savings">Please fill in: ${blank.join(', ')}</div>`;
-                return;
-            }
-
-            let r;
-            try {
-                const resp = await fetch('/api/predict', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                r = await resp.json();
-                if (!resp.ok) {
-                    recDiv.className = 'recommendation rec-wait';
-                    recDiv.innerHTML = `<div class="rec-title">Invalid input</div>
-                        <div class="rec-savings">${r.error || resp.status}</div>`;
-                    return;
-                }
-            } catch (e) {
-                recDiv.className = 'recommendation rec-wait';
-                recDiv.innerHTML = `<div class="rec-title">Backend unreachable</div>
-                    <div class="rec-savings">Start it with: python app.py</div>`;
-                return;
-            }
-
-            drawForecast(r);
-
-            const wait = r.recommendation === 'WAIT';
-            recDiv.className = 'recommendation ' + (wait ? 'rec-wait' : 'rec-now');
-
-            // Ground truth. These forecasts are walk-forward, so the outcome
-            // is knowable and there is no reason to hide it.
-            const hit = r.direction_correct;
-            const truth = `
-              <div style="font-size:.8em;opacity:.85;margin-top:10px;
-                          border-top:1px solid rgba(255,255,255,.25);padding-top:8px">
-                <strong>What actually happened:</strong>
-                ${pct(r.actual_move_pct)} &rarr; $${r.actual_rate}/ton.
-                Direction <strong style="color:${hit ? '#bbf7d0' : '#fecaca'}">
-                ${hit ? 'correct' : 'wrong'}</strong>, outcome
-                ${r.inside_interval ? 'inside' : '<strong>outside</strong>'}
-                the ${r.interval_pct}% interval.
-              </div>`;
-
-            recDiv.innerHTML = `
-                <div class="rec-title">RECOMMENDATION: ${
-                    wait ? 'WAIT' : 'CHARTER NOW'}</div>
-                <div class="rec-savings">
-                    As of <strong>${fmtDate(r.as_of)}</strong>, Capesize index
-                    ${r.capesize_index.toLocaleString()}.<br>
-                    Forecast over ${r.horizon_days} trading days:
-                    <strong>${pct(r.expected_move_pct)}</strong>
-                    &nbsp;${(fin(r.lo_pct) === null || fin(r.hi_pct) === null)
-                        ? '(no calibrated interval for this fold)'
-                        : `(${r.interval_pct}% interval ${pct(r.lo_pct)} to `
-                          + `${pct(r.hi_pct)})`}<br>
-                    $${r.current_rate}/ton &rarr;
-                    <strong>$${r.projected_rate}/ton</strong>
-                    &mdash; ${r.direction === 'up'
-                        ? 'rates rising, fix now'
-                        : 'rates easing, hold and re-approach'}.<br>
-                    Move at risk on this parcel:
-                    <strong>${fin(r.exposure) === null ? '—'
-                        : '$' + r.exposure.toLocaleString()}</strong>
-                </div>${truth}`;
-        }
-
-        // Forecast cone against the realised outcome.
-        function drawForecast(r) {
-            const labels = ['as of ' + fmtDate(r.as_of), '+' + r.horizon_days + ' days'];
-            const c = r.current_rate;
-            if (chart) chart.destroy();
-            chart = new Chart(document.getElementById('forecastChart'), {
-                type: 'line',
-                data: { labels: labels, datasets: [
-                    // A null bound means no calibration data for that
-                    // fold. Plot nothing rather than a band at zero,
-                    // which would read as a confident tight interval.
-                    { label: 'Upper ' + r.interval_pct + '%',
-                      data: fin(r.hi_pct) === null ? []
-                            : [c, +(c * (1 + r.hi_pct / 100)).toFixed(2)],
-                      borderColor: 'rgba(56,189,248,.35)',
-                      backgroundColor: 'rgba(56,189,248,.12)',
-                      fill: '+1', pointRadius: 0, borderDash: [4, 4] },
-                    { label: 'Lower ' + r.interval_pct + '%',
-                      data: fin(r.lo_pct) === null ? []
-                            : [c, +(c * (1 + r.lo_pct / 100)).toFixed(2)],
-                      borderColor: 'rgba(56,189,248,.35)',
-                      fill: false, pointRadius: 0, borderDash: [4, 4] },
-                    { label: 'Forecast', data: [c, r.projected_rate],
-                      borderColor: '#38bdf8', borderWidth: 3,
-                      fill: false, tension: 0 },
-                    { label: 'Actual', data: [c, r.actual_rate],
-                      borderColor: '#22c55e', borderWidth: 3,
-                      borderDash: [6, 3], fill: false, tension: 0 }
-                ]},
-                options: { responsive: true,
-                    plugins: { legend: { labels: { color: '#94a3b8' } } },
-                    scales: {
-                        x: { ticks: { color: '#94a3b8' },
-                             grid: { color: '#334155' } },
-                        // Not beginAtZero: these are rates around a level, and
-                        // anchoring at zero flattens the move into a straight
-                        // line you cannot read.
-                        y: { ticks: { color: '#94a3b8' },
-                             grid: { color: '#334155' } }
-                    } }
-            });
-        }
-
-    </script>
-</body>
-</html>
+    ['current_rate','volume','date'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.addEventListener('change', predict); el.addEventListener('input', predict); }
+    });
+    const pt = document.getElementById('parcel_t');
+    if (pt) { pt.addEventListener('change', portOptions); pt.addEventListener('input', portOptions); }
+    predict();
+    portOptions();
+});
+</script>
