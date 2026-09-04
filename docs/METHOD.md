@@ -179,6 +179,174 @@ finite-sample-corrected quantile, and both are written to `models/metrics.json`
 
 ---
 
+### What the forecast is worth
+
+Direction accuracy is a statistic, and a statistic is not a procurement case.
+`src/procurement.py` scores the decision instead: a cargo has to move, and the
+desk either fixes today at the prevailing rate or holds one horizon and fixes
+then. Holding wins exactly when the market falls.
+
+The saving is reported as a **fraction of the freight rate**, never in currency.
+The Baltic series here is an index in points; this repository carries no sourced
+conversion to dollars per day, and asserting one would place a fabricated number
+at the centre of the result. Fix today and pay R, or hold and pay `R·exp(y)`, so
+the saving is `R − R·exp(y)` and as a fraction it is `1 − exp(y)` — R cancels,
+which is precisely what makes the figure portable to a rate the reader supplies.
+
+| Policy | Saved | Win rate | Fixtures held |
+| :--- | ---: | ---: | ---: |
+| always wait | −2.88% | 47.6% | 395 |
+| momentum says fall | +1.52% | 57.1% | 210 |
+| **the model says fall** | **+1.91%** | 60.1% | 183 |
+| perfect foresight | +7.86% | 100% | 188 |
+
+Decisions are spaced a full horizon apart. Scoring a five-day return on
+consecutive days would reuse the same market move five times, inflating both the
+total and every p-value roughly fivefold; `fixtures()` is factored out so a test
+asserts the spacing rather than trusting a comprehension.
+
+Three controls decide whether any of this is real.
+
+**Always wait.** If rates had simply drifted down across the sample, waiting
+every time would collect the same money and the forecast would have contributed
+nothing. It does not: waiting every time *loses* 2.88%, because the index rose
+over 2018–2026. The policy therefore earns its result against a market that
+punished waiting, and beating this control is significant at p = 0.00001.
+
+**Perfect foresight.** Waiting exactly when the market falls returns 7.86%, so
+the model captures 24% of what was available. Without this bound the headline
+would read as an unbounded win instead of a fraction of a fixed pot.
+
+**Momentum.** Here the honest answer is that the model does **not** win. At
+p = 0.32 the two are indistinguishable on money, and no amount of framing turns
+that into a victory. The model earns its place on RMSE and on direction, where
+momentum is beaten; on this particular decision at this horizon, it does not.
+Saying so is cheaper than having it found.
+
+The remaining check is that slicing itself cannot manufacture a saving. Random
+calls on these same returns earn about half the always-wait control — near
+−1.4%, not zero, because a coin-flip rule still waits through half a rising
+market. Every random trial loses money; the model is the only policy tested that
+turns the sign positive, and `tests/test_procurement.py` asserts it.
+
+Four things the backtest deliberately does not do: it does not compound, because
+a procurement programme is a stream of separate decisions rather than a position
+that rides; it does not price the cost of waiting, since delay consumes laycan
+and risks the vessel, which makes the figure an **upper** bound on the rate
+component alone; it does not model a desk that cannot hold at all under a berth
+window; and it cannot be traded, because the Baltic index is a broker survey and
+not a price anyone can fix at.
+
+### Where the model stops working
+
+Publishing one aggregate over eight years invites exactly one question, and
+answering it from that same aggregate is not an answer. `regimes()` splits the
+record by calendar year — the one boundary that cannot be accused of having been
+chosen — and reports the weak years beside the strong ones.
+
+RMSE skill is negative in **two of nine years**, 2022 and 2026. In those same two
+years direction also fails to beat the year's own base rate: 51.0% against 54.4%
+in 2022, and 56.0% against 62.0% in 2026, where always saying "up" would have
+scored better. A bad year here is bad on every measure at once. The confidence
+tiering does not rescue them either — 54.9% and 55.7% on the strongest half — so
+in a bad year the model is *confidently* wrong. The aggregate is carried by
+2019–2021.
+
+The pattern behind it is visible in the volatility column. The standard deviation
+of the target fell from 34.7% across 2018–2021 to 12.1% in 2026. RMSE skill is a
+variance-explained measure, so a calm market leaves little variance to explain
+and a handful of large misses dominate what remains; direction is scale-free and
+degrades far more gently, from 66.8% to 58.0% after 2022 while skill went from
++10.4% to −1.2%. This is the fragility §1 sets out under *the skill figure is
+fragile; the direction figure is not*, written before it was measured, and the
+recent record confirms it rather than contradicting it.
+
+Two consequences follow. The first is that the honest headline is the direction
+figure with its base rate beside it, never the skill figure alone. The second is
+that a deployment would need to monitor realised volatility, because the
+conditions under which this model adds least are identifiable in advance — they
+are the quiet ones.
+
+### Keeping the demo honest when the network is not there
+
+The only live network call at serving time is the ten-day weather outlook in
+`src/risk.py`; everything else on the dashboard is read from an artefact built
+offline. Those forecasts were originally fetched one port after another, so an
+unreachable network cost `TIMEOUT` once per site — 60 seconds before the panel
+rendered anything.
+
+No test caught it, and the reason is worth recording: every row degraded
+*correctly* at the end of that minute. The payload was right and only the latency
+was wrong, so an assertion on content could never have found it. The calls are
+independent, so they are now issued together and the worst case is one timeout
+rather than five; connect and read timeouts are separated as well, because a
+reachable-but-slow API deserves patience while an unreachable one does not, and a
+dead network fails at connect. Measured against a black-holed proxy, the risk
+endpoint went from **60s to 5s**, and the ordering test confirms a fast port
+cannot overtake a slow one and shuffle the panel.
+
+That fixed the server, which turned out to be the easier half.
+
+The page itself was still loading `chart.js` from a CDN and its three
+typefaces from Google Fonts. Cutting the *browser* off from the network — the
+condition that actually obtains at a venue — does not degrade that page, it
+breaks it: the fonts merely fall back, but the chart library never arrives, the
+inline script then throws on a missing global, and the date field, the
+recommendation panel and the live badge all disappear with it. The opening view
+of the demo renders as an empty box.
+
+No test caught this either, and the reason is structural: every request the suite
+makes goes to `127.0.0.1`, which is reachable with the wifi off. Both halves of
+the offline problem were invisible for the same underlying reason — the tests
+asked whether the answer was right, not whether it could be obtained. Both are
+now asserted directly, the first on the latency budget and the second on the
+markup, which is checked for any `src` or `href` pointing at another host.
+
+Both dependencies are vendored under `static/vendor/`, so the page is
+byte-identical with the network down. The font bundle keeps the Latin subsets
+only — Google serves Cyrillic, Greek and Vietnamese alongside them, which are
+dead weight for an English page. Building it exposed a trap worth recording:
+these are *variable* fonts, so every weight of a family shares one file, and a
+first attempt that named the downloaded files per weight left twelve of eighteen
+`@font-face` rules pointing at files that had never been downloaded. The page
+fell back silently, which looks perfectly fine until it is put beside the online
+version. A test now checks that every file the stylesheet asks for exists.
+
+That still left the panel blank on its only measured signal. The last forecast
+that successfully arrived is now cached per port under `data/processed/`, and a
+failed fetch falls back to it, which is what makes the whole dashboard usable
+with the network down rather than merely intact.
+
+A stale forecast shown as a live one would be the exact failure this module
+exists to prevent, so the fallback is fenced three ways. It **expires**: a cache
+older than 72 hours is refused outright and the honest outage row returns, because
+beyond that the remaining window is too short to be worth the ambiguity. Days it
+covered that have **already passed are dropped** — a ten-day outlook taken three
+days ago is a seven-day outlook now, and reporting "over the next 10 days" off it
+would describe three days already in the past. And every row it produces is
+**labelled**: `live: false`, the age in the title as well as the basis line, since
+collapsed lists show titles alone.
+
+The presentation layer needed the same care. A cached forecast usually yields
+*clear* rows, and the panel collapses clear rows out of sight, so an offline
+panel would have read as a clean all-clear with nothing to say that five of its
+checks were not live — the reassuring-from-no-data failure reintroduced one layer
+up. The count of not-live checks is therefore printed beside the severity counts,
+where it cannot be collapsed.
+
+One consequence worth stating plainly: this is a cache, not an oracle. It makes
+the demo work at a venue with no wifi provided the app was run online at some
+point in the preceding three days. It does not make the forecast available to
+someone who has never had a connection, and it should not: that case correctly
+reports that the check could not run.
+
+The failure text is translated too. `HTTPSConnectionPool(host=..., port=443):
+Max retries exceeded` reads, in front of an audience, as though the software is
+broken rather than the wifi; the row now says the weather service could not be
+reached and there is no working network connection. Nothing is swallowed — an
+unrecognised error still arrives verbatim, because a message nobody anticipated
+is exactly the one that must not be smoothed into a reassuring sentence.
+
 ## 2 · Falsification test one — the traded proxy
 
 Our *licensed* Baltic history ends 2019-07-31, and the Baltic Exchange charges

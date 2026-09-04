@@ -21,6 +21,7 @@ coverage and honestly wrote 50% into metrics.json, all of those pass.
 Run:  python -m tests.test_walkforward
 """
 
+import io
 import json
 import math
 import os
@@ -233,6 +234,17 @@ def main():
 
     check('no row inside the burn-in is ever selected',
           not tm.tier_mask(pa, 0.75, burn)[:burn].any())
+    # The boundary needs its own branch and therefore its own check.
+    # Left to the general path, "the strongest 100%" compares each week
+    # against the running MINIMUM, so a week weaker than anything before
+    # it fails a >= test and drops out - one row in 250. Never reached
+    # by the published 75/50/25, but the name has to mean what it says.
+    check('share=1.0 selects every eligible week, with none lost to a '
+          'new running minimum',
+          int(tm.tier_mask(pa, 1.0, burn).sum()) == n_t - burn,
+          (int(tm.tier_mask(pa, 1.0, burn).sum()), n_t - burn))
+    check('and share=1.0 still respects the burn-in',
+          not tm.tier_mask(pa, 1.0, burn)[:burn].any())
     m75 = tm.tier_mask(pa, 0.75, burn)
     m50 = tm.tier_mask(pa, 0.50, burn)
     m25 = tm.tier_mask(pa, 0.25, burn)
@@ -311,6 +323,81 @@ def main():
             check('but is not implausibly high either - over 85% on a '
                   '5-day freight return would mean a leak',
                   h['direction'] < 0.85, h['direction'])
+
+    print('\n[11] the per-year breakdown is not a flattering slice')
+    g = m['models'].get('regimes')
+    check('metrics.json carries the per-year regimes', bool(g),
+          sorted(m['models']))
+    if g:
+        yv = o['y'].to_numpy(dtype=float)
+        pv = o['ridge'].to_numpy(dtype=float)
+        zv = o['zero'].to_numpy(dtype=float)
+        hit = np.sign(pv) == np.sign(yv)
+        strong = tm.tier_mask(pv, g['share'], g['min_history'])
+        years = sorted({int(r['period']) for r in g['rows']})
+        check('every year with enough rows is present, none dropped',
+              years == sorted({int(y_) for y_ in o.index.year
+                               if (o.index.year == y_).sum() >= g['min_n']}),
+              years)
+        for r in g['rows']:
+            k = np.asarray(o.index.year == int(r['period']))
+            check('%s: %d weeks, direction %.1f%% recomputes'
+                  % (r['period'], r['n'], r['direction_pct']),
+                  int(k.sum()) == r['n']
+                  and abs(float(hit[k].mean()) * 100
+                          - r['direction_pct']) < 5e-9,
+                  (int(k.sum()), r['n']))
+            rz = float(np.sqrt(np.mean((yv[k] - zv[k]) ** 2)))
+            rp = float(np.sqrt(np.mean((yv[k] - pv[k]) ** 2)))
+            check('%s: skill %+.2f%% recomputes' % (r['period'],
+                                                    r['skill_pct']),
+                  abs((1 - rp / rz) * 100 - r['skill_pct']) < 5e-9,
+                  ((1 - rp / rz) * 100, r['skill_pct']))
+            # The base rate is what an always-up (or always-down) caller
+            # scores. Below 50% it would not be the BEST constant call,
+            # so a value under half means the wrong side was taken.
+            check('%s: the base rate is the best constant call (%.1f%%)'
+                  % (r['period'], r['base_rate_pct']),
+                  r['base_rate_pct'] >= 50.0, r['base_rate_pct'])
+            sel = k & strong
+            if r['strong_direction_pct'] is None:
+                check('%s: too thin a tier reports nothing rather than '
+                      'a number from %d weeks' % (r['period'], int(sel.sum())),
+                      int(sel.sum()) < 20, int(sel.sum()))
+            else:
+                check('%s: the strongest-%d%% column recomputes (%.1f%%)'
+                      % (r['period'], g['share'] * 100,
+                         r['strong_direction_pct']),
+                      abs(float(hit[sel].mean()) * 100
+                          - r['strong_direction_pct']) < 5e-9,
+                      (float(hit[sel].mean()) * 100,
+                       r['strong_direction_pct']))
+
+        # The claims the dashboard prints under this table. They are
+        # computed there rather than written, because an earlier draft
+        # asserted direction held above the base rate in every year and
+        # the table directly above it disagreed in two of them.
+        weak = [r for r in g['rows'] if r['skill_pct'] < 0]
+        below = [r for r in g['rows']
+                 if r['direction_pct'] <= r['base_rate_pct']]
+        print('       skill negative in: %s'
+              % (', '.join(r['period'] for r in weak) or 'no year'))
+        print('       below its base rate in: %s'
+              % (', '.join(r['period'] for r in below) or 'no year'))
+        check('the weak years are disclosed, not hidden - there is at '
+              'least one', len(weak) >= 1, len(weak))
+        check('a year that loses on skill is not quietly winning on '
+              'direction: the two failures coincide',
+              {r['period'] for r in below} <= {r['period'] for r in weak},
+              ({r['period'] for r in below}, {r['period'] for r in weak}))
+        check('and the good years still outnumber the bad',
+              len(weak) < len(g['rows']) / 2, (len(weak), len(g['rows'])))
+        page = io.open(os.path.join(paths.TEMPLATES, 'dashboard.html'),
+                       encoding='utf-8').read()
+        check('the dashboard COUNTS the weak years rather than naming '
+              'them in prose that could go stale',
+              'r.direction_pct <= r.base_rate_pct' in page
+              and '2022' not in page.split('fillRegimes')[1][:2600])
 
     print('\n' + '=' * 62)
     if FAIL:

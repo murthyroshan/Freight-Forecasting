@@ -115,6 +115,103 @@
       ],
       "model": "ridge"
     },
+    "regimes": {
+      "share": 0.5,
+      "min_history": 250,
+      "min_n": 100,
+      "rows": [
+        {
+          "period": "2018",
+          "n": 227,
+          "direction_pct": 61.23348017621145,
+          "skill_pct": 5.939666693766588,
+          "volatility_pct": 22.112695441097486,
+          "base_rate_pct": 52.863436123348016,
+          "n_strong": 0,
+          "strong_direction_pct": null
+        },
+        {
+          "period": "2019",
+          "n": 249,
+          "direction_pct": 69.47791164658635,
+          "skill_pct": 10.460825239957694,
+          "volatility_pct": 30.20078058808054,
+          "base_rate_pct": 51.00401606425703,
+          "n_strong": 108,
+          "strong_direction_pct": 81.48148148148148
+        },
+        {
+          "period": "2020",
+          "n": 147,
+          "direction_pct": 70.74829931972789,
+          "skill_pct": 11.637820055633307,
+          "volatility_pct": 61.343198042379534,
+          "base_rate_pct": 57.14285714285714,
+          "n_strong": 68,
+          "strong_direction_pct": 85.29411764705883
+        },
+        {
+          "period": "2021",
+          "n": 211,
+          "direction_pct": 66.82464454976304,
+          "skill_pct": 7.369470778401155,
+          "volatility_pct": 19.819377493483607,
+          "base_rate_pct": 58.29383886255924,
+          "n_strong": 121,
+          "strong_direction_pct": 72.72727272727273
+        },
+        {
+          "period": "2022",
+          "n": 241,
+          "direction_pct": 51.037344398340245,
+          "skill_pct": -7.775293714684461,
+          "volatility_pct": 32.39662867998809,
+          "base_rate_pct": 54.35684647302905,
+          "n_strong": 175,
+          "strong_direction_pct": 54.85714285714286
+        },
+        {
+          "period": "2023",
+          "n": 242,
+          "direction_pct": 62.8099173553719,
+          "skill_pct": 6.366531148300303,
+          "volatility_pct": 28.948103028602407,
+          "base_rate_pct": 52.066115702479344,
+          "n_strong": 134,
+          "strong_direction_pct": 70.8955223880597
+        },
+        {
+          "period": "2024",
+          "n": 239,
+          "direction_pct": 61.92468619246861,
+          "skill_pct": 1.6593760553932801,
+          "volatility_pct": 18.624969655273134,
+          "base_rate_pct": 52.71966527196652,
+          "n_strong": 115,
+          "strong_direction_pct": 74.78260869565217
+        },
+        {
+          "period": "2025",
+          "n": 249,
+          "direction_pct": 57.42971887550201,
+          "skill_pct": 3.7908325405502374,
+          "volatility_pct": 19.41301436318594,
+          "base_rate_pct": 50.602409638554214,
+          "n_strong": 103,
+          "strong_direction_pct": 69.90291262135922
+        },
+        {
+          "period": "2026",
+          "n": 166,
+          "direction_pct": 56.024096385542165,
+          "skill_pct": -18.940274790346034,
+          "volatility_pct": 12.12312276213633,
+          "base_rate_pct": 62.048192771084345,
+          "n_strong": 70,
+          "strong_direction_pct": 55.714285714285715
+        }
+      ]
+    },
     "folds": [
       {
         "fold": 0,

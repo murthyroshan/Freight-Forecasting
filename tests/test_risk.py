@@ -50,6 +50,38 @@ def fake_forecast(gusts, rain=None):
 
 
 def main():
+    # Point the forecast cache at an empty directory for the whole run.
+    #
+    # Many checks below assert what happens when a forecast fails and
+    # there is NOTHING to fall back on - the honest outage row. Once the
+    # cache existed, those checks became dependent on whether the machine
+    # running them happened to have a warm cache: green on a clean
+    # checkout, red on a laptop that had just opened the dashboard. A
+    # test whose result depends on state it never set is not testing
+    # anything. Section [20e] builds its own cache fixtures inside this
+    # directory, so the fallback is still exercised - deliberately,
+    # rather than by accident.
+    import shutil as _sh2
+    import tempfile as _tf
+    real_dir = risk.CACHE_DIR
+    risk.CACHE_DIR = _tf.mkdtemp(prefix='risk-cache-test-')
+    # And stop successful sections from WARMING it. Several sections
+    # call the live forecast, which writes the cache as a side effect;
+    # a later section that mocks a failure was then rescued by the
+    # cache an earlier one had filled, and asserted the fallback while
+    # claiming to assert the outage. Both paths matter and both are
+    # checked - separately, and on fixtures the test itself laid down.
+    real_write = risk._cache_write
+    risk._cache_write = lambda port, frame: None
+    try:
+        return _run(real_write)
+    finally:
+        risk._cache_write = real_write
+        _sh2.rmtree(risk.CACHE_DIR, ignore_errors=True)
+        risk.CACHE_DIR = real_dir
+
+
+def _run(real_cache_write):
     global orig
     print('\n[1] thresholds are the measured ones, not round numbers')
     check('halt threshold is 90 km/h, where the -88%% effect was measured',
@@ -323,9 +355,247 @@ def main():
         pd.read_parquet = orig_pq
 
     print('\n[20] the latency budget fits inside a client timeout')
-    worst = risk.TIMEOUT * len(risk.SITES)
-    check('worst case %ds (%d sites x %ds) stays under 90s'
-          % (worst, len(risk.SITES), risk.TIMEOUT), worst < 90, worst)
+    # This used to be TIMEOUT x len(SITES) - the forecasts were fetched
+    # one after another, so an unreachable network cost 60 seconds
+    # before anything rendered. Every row degraded correctly at the end
+    # of that wait, which is exactly why no assertion here caught it:
+    # the payload was right and only the latency was wrong.
+    check('the worst case is one timeout, not one per site',
+          risk.WORST_CASE == risk.TIMEOUT,
+          (risk.WORST_CASE, risk.TIMEOUT))
+    check('worst case %ds stays under 90s' % risk.WORST_CASE,
+          risk.WORST_CASE < 90, risk.WORST_CASE)
+    check('and it no longer scales with the number of ports (%d sites)'
+          % len(risk.SITES),
+          risk.WORST_CASE < risk.TIMEOUT * len(risk.SITES),
+          (risk.WORST_CASE, risk.TIMEOUT * len(risk.SITES)))
+    check('connecting is abandoned sooner than reading, because a dead '
+          'network fails at connect', risk.CONNECT_TIMEOUT < risk.TIMEOUT,
+          (risk.CONNECT_TIMEOUT, risk.TIMEOUT))
+    check('and the forecast call actually passes both halves',
+          '(CONNECT_TIMEOUT, timeout)' in io.open(
+              os.path.join(os.path.dirname(os.path.dirname(
+                  os.path.abspath(__file__))), 'src', 'risk.py'),
+              encoding='utf-8').read())
+
+    print('\n[20b] going parallel did not reorder the panel')
+    # The risk of issuing the calls together is that a fast port
+    # overtakes a slow one and the rows come back shuffled. Make the
+    # LAST port answer first and the first port answer last, then check
+    # the output is byte-identical to the sequential ordering.
+    import time as _time
+    order = list(risk.SITES)
+    real_ww = risk.weather_warnings
+
+    def slow_ww(port, days=risk.FORECAST_DAYS):
+        _time.sleep(0.05 * (len(order) - order.index(port)))
+        return [{'kind': 'weather', 'port': port, 'severity': 'watch',
+                 'measured': True, 'title': 'row for %s' % port,
+                 'detail': '', 'basis': ''}]
+
+    try:
+        risk.weather_warnings = slow_ww
+        got = [w['port'] for w in risk.assess() if w['kind'] == 'weather']
+        risk.weather_warnings = real_ww
+        want = []
+        for p in order:
+            want += [w['port'] for w in slow_ww(p)]
+        check('the ports come back in the declared order, not the order '
+              'the network answered', got == sorted(want),
+              (got, sorted(want)))
+        check('every site still produces its row when run concurrently',
+              set(got) == set(order), set(got) ^ set(order))
+    finally:
+        risk.weather_warnings = real_ww
+
+    print('\n[20c] with no network at all, the panel still tells the truth')
+    # The failure this guards is not a crash - it is the opposite. A
+    # venue with no wifi must not produce a page that looks fine, and
+    # must not take a minute to say so.
+    import requests as _rq
+    real_get = _rq.get
+
+    def dead(*a, **k):
+        raise _rq.exceptions.ConnectionError(
+            "HTTPSConnectionPool(host='api.open-meteo.com', port=443): "
+            'Max retries exceeded with url: /v1/forecast?latitude=20.26')
+
+    try:
+        _rq.get = dead
+        t0 = _time.time()
+        off = risk.assess()
+        took = _time.time() - t0
+    finally:
+        _rq.get = real_get
+
+    wx = [w for w in off if w['port'] and w['kind'] in ('weather',
+                                                        'unavailable')]
+    check('every site reports its weather check as unavailable',
+          len(wx) == len(risk.SITES)
+          and all(w['kind'] == 'unavailable' for w in wx),
+          [(w['port'], w['kind']) for w in wx])
+    check('not one of them is marked measured',
+          not any(w['measured'] for w in wx))
+    check('and none of them says the weather is clear - the failure a '
+          'risk panel must never have',
+          not any('no disruptive' in (w['title'] + w['detail']).lower()
+                  for w in off),
+          [w['title'] for w in off if 'disrupt' in w['title'].lower()])
+    check('the checks that read local artefacts still run offline',
+          any(w['kind'] == 'berth' for w in off)
+          and any(w['kind'] == 'seasonal' for w in off),
+          sorted({w['kind'] for w in off}))
+    check('the connection-pool internals are not shown to the user',
+          not any('HTTPSConnectionPool' in w['detail'] for w in off),
+          [w['detail'][:60] for w in off if 'HTTPSConn' in w['detail']][:1])
+    check('the user is told there is no network, in words',
+          all('no working network connection' in w['detail'] for w in wx),
+          [w['detail'][:70] for w in wx[:1]])
+    check('and it takes under a second when every call fails instantly '
+          '(%.2fs)' % took, took < 1.0, took)
+
+    print('\n[20d] _why names the failure without swallowing it')
+    for exc, want in (
+            (_rq.exceptions.ConnectTimeout('x'), 'did not accept a connection'),
+            (_rq.exceptions.ReadTimeout('x'), 'did not answer within'),
+            (_rq.exceptions.ProxyError('x'), 'refused the connection'),
+            (_rq.exceptions.ConnectionError('x'), 'no working network')):
+        check('%s is named in plain words' % type(exc).__name__,
+              want in risk._why(exc), risk._why(exc))
+    # The important half: an error nobody anticipated must arrive intact
+    # rather than be smoothed into a reassuring sentence.
+    check('an unrecognised failure passes through verbatim',
+          risk._why(RuntimeError('Open-Meteo returned HTTP 429'))
+          == 'Open-Meteo returned HTTP 429')
+    check('a ConnectTimeout is not misreported as a plain outage, '
+          'despite subclassing ConnectionError',
+          'accept a connection' in risk._why(
+              _rq.exceptions.ConnectTimeout('x')))
+
+    print('\n[20e] the cached forecast keeps the panel useful, honestly')
+    # With no network the panel used to go blank on its only measured
+    # signal. It now falls back to the last forecast that arrived - but
+    # a stale outlook presented as a live one is exactly the failure
+    # this module exists to prevent, so the fallback is fenced by three
+    # rules and each is checked here.
+    import json as _json
+    import shutil as _sh
+    import shutil as _sh3
+    import tempfile as _tf2
+    real_get2 = _rq.get
+    cdir = risk.CACHE_DIR
+    bak2 = cdir + '.testbak'
+    had_cache = os.path.isdir(cdir)
+    if had_cache:
+        _sh.copytree(cdir, bak2, dirs_exist_ok=True)
+    port = 'paradip'
+
+    def seed(hours_old, day_offset=0, ndays=10):
+        os.makedirs(cdir, exist_ok=True)
+        base = pd.Timestamp.now().normalize() - pd.Timedelta(days=day_offset)
+        payload = {'port': port,
+                   'fetched': (pd.Timestamp.now('UTC')
+                               - pd.Timedelta(hours=hours_old)).isoformat(),
+                   'days': [{'date': str((base + pd.Timedelta(days=i)).date()),
+                             'gust': 20.0 + i, 'wind': 10.0, 'rain': 0.0}
+                            for i in range(ndays)]}
+        with io.open(risk._cache_file(port), 'w', encoding='utf-8') as fh:
+            fh.write(_json.dumps(payload))
+
+    try:
+        _rq.get = dead
+        # 1. fresh enough -> used, and every row says it is not live
+        seed(2)
+        rows = risk.weather_warnings(port)
+        check('a recent cached forecast is used instead of giving up',
+              all(r['kind'] == 'weather' for r in rows),
+              [r['kind'] for r in rows])
+        check('and every row it produces is flagged not-live',
+              rows and all(r.get('live') is False for r in rows))
+        check('every row carries the age of the forecast',
+              rows and all('stale_hours' in r for r in rows))
+        check('the age appears in the TITLE, not only the basis line, '
+              'because collapsed lists show titles alone',
+              rows and all('forecast from' in r['title'] for r in rows),
+              [r['title'] for r in rows[:1]])
+        check('and the basis says plainly that it is not live',
+              rows and all('NOT live' in r['basis'] for r in rows))
+
+        # 2. too old -> refused outright, back to the honest outage row
+        seed(risk.CACHE_MAX_AGE_H + 1)
+        old_rows = risk.weather_warnings(port)
+        check('a cache past %dh is refused, not shown'
+              % risk.CACHE_MAX_AGE_H,
+              all(r['kind'] == 'unavailable' for r in old_rows),
+              [r['kind'] for r in old_rows])
+        seed(risk.CACHE_MAX_AGE_H - 1)
+        check('and one just inside the limit is still used',
+              all(r['kind'] == 'weather'
+                  for r in risk.weather_warnings(port)))
+
+        # 3. days that have already happened are dropped. A ten-day
+        # outlook taken three days ago is a seven-day outlook now, and
+        # "over the next 10 days" off it would describe three days that
+        # are already in the past.
+        seed(48, day_offset=3)
+        fr, age = risk._cache_read(port, 10)
+        check('a 10-day forecast taken 3 days ago leaves 7 usable days',
+              fr is not None and len(fr) == 7, None if fr is None else len(fr))
+        check('and none of the days it keeps is in the past',
+              fr is not None
+              and bool(fr['date'].min() >= pd.Timestamp.now().normalize()))
+        seed(48, day_offset=20)
+        check('a cache whose days have ALL passed is refused even when '
+              'the file itself is recent',
+              risk._cache_read(port, 10)[0] is None)
+
+        # 4. a missing cache is not an error, just no fallback
+        os.remove(risk._cache_file(port))
+        check('with no cache at all it degrades to the outage row',
+              all(r['kind'] == 'unavailable'
+                  for r in risk.weather_warnings(port)))
+        check('and _cache_read says so without raising',
+              risk._cache_read(port, 10) == (None, None))
+        with io.open(risk._cache_file(port), 'w', encoding='utf-8') as fh:
+            fh.write('{ not json at all')
+        check('a corrupt cache file is ignored rather than crashing',
+              risk._cache_read(port, 10) == (None, None))
+    finally:
+        _rq.get = real_get2
+        if os.path.isdir(cdir):
+            _sh.rmtree(cdir)
+        if had_cache:
+            _sh.move(bak2, cdir)
+
+    check('the real cache is back where it was',
+          os.path.isdir(cdir) == had_cache)
+    check('writing a cache never breaks a live forecast',
+          risk._cache_write('nonexistent-port-name', pd.DataFrame()) is None)
+
+    # The writer is stubbed for the rest of the run, so round-trip it
+    # here or nothing would ever check that what is written can be read.
+    tmp_round = _tf2.mkdtemp(prefix='risk-roundtrip-')
+    old_dir = risk.CACHE_DIR
+    try:
+        risk.CACHE_DIR = tmp_round
+        frame = pd.DataFrame({
+            'date': pd.date_range(pd.Timestamp.now().normalize(), periods=4),
+            'gust': [30.0, 95.0, 40.0, 20.0], 'wind': [10.0] * 4,
+            'rain': [0.0, 5.0, 60.0, 0.0]})
+        real_cache_write('roundtrip', frame)
+        back, age = risk._cache_read('roundtrip', 10)
+        check('what _cache_write writes, _cache_read reads back',
+              back is not None and len(back) == 4,
+              None if back is None else len(back))
+        check('and the values survive the round trip',
+              back is not None
+              and float(back['gust'].max()) == 95.0
+              and float(back['rain'].max()) == 60.0)
+        check('a freshly written cache reports an age near zero',
+              age is not None and age < 0.05, age)
+    finally:
+        risk.CACHE_DIR = old_dir
+        _sh3.rmtree(tmp_round, ignore_errors=True)
 
     print('\n[21] a failing HTTP status is named as an outage')
     class FakeResp(object):
@@ -538,8 +808,8 @@ def main():
     # server worst case < the browser own timeout < the one test_app uses.
     # If these ever invert, a slow but working backend looks like a
     # failure to whichever layer gives up first.
-    worst = risk.TIMEOUT * len(risk.SITES)
-    check('server worst case is %ds' % worst, worst == 60, worst)
+    worst = risk.WORST_CASE
+    check('server worst case is %ds' % worst, worst == 12, worst)
     # This used to end `check('...', 75 < 90)` - two literals compared to
     # each other, which no code change could ever break. Read the other
     # two rungs from the files that actually set them.

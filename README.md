@@ -47,6 +47,7 @@ No API keys. Every data source is free and keyless.
 python -m src.fetch_data      # 29 parquet files  (~3 min first run)
 python -m src.build_panel     # 3,284 rows × 17 features
 python -m src.train_model     # walk-forward evaluation
+python -m src.procurement     # what the forecast was worth
 python -m src.live_model      # the control experiment
 python -m src.optimise        # vessel and berth selection
 python -m src.ballast         # the empty return leg
@@ -122,6 +123,61 @@ returns 49–53%, so the slicing is not what creates the lift; `tests/test_walkf
 asserts that, and that truncating the history leaves every earlier decision
 unchanged.
 
+**What that is worth in freight, not in percentage points.** Direction accuracy
+is a statistic; a steel producer buys freight. So: a cargo has to move, and the
+desk either fixes today or holds one horizon and fixes then. Over **395
+independent fixtures** (spaced a full horizon apart, so no market move is counted
+twice):
+
+| Policy | Saved, % of rate | Win rate | |
+| :--- | ---: | ---: | :--- |
+| always wait | **−2.88%** | 47.6% | no model at all |
+| wait when momentum says fall | +1.52% | 57.1% | the naive rule |
+| **wait when the model says fall** | **+1.91%** | 60.1% | this model |
+| perfect foresight | +7.86% | 100% | the ceiling |
+
+Every figure is a share **of the freight rate**. The Baltic series here is an
+index in points, this repository has no sourced conversion to dollars, and
+inventing one would put a fabricated number at the centre of the result — so
+supply your own rate and multiply.
+
+The control is the number that matters. Waiting every time *loses* 2.88%, because
+the index rose across this period, so the policy had to earn its result against a
+market that punished waiting. It beats fixing today (p = 0.011) and beats always
+waiting (p = 0.00001), and captures 24% of what perfect foresight would have
+taken. **It is not distinguishable from the momentum rule on money** (p = 0.32);
+the model earns its place on RMSE and direction, and on this decision the two are
+a tie. It also loses on 40% of the weeks it holds, worst single decision
+−110.1%, and holding burns laycan, which is not priced here.
+
+**Where it stops working.** One number over eight years invites exactly one
+question, so here is the answer split by calendar year — the one boundary nobody
+can accuse us of choosing:
+
+| Year | Direction | Base rate | RMSE skill | Volatility of y | Strongest 50% |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| 2019 | 69.5% | 51.0% | +10.5% | 30.2% | 81.5% |
+| 2020 | 70.7% | 57.1% | +11.6% | 61.3% | 85.3% |
+| 2021 | 66.8% | 58.3% | +7.4% | 19.8% | 72.7% |
+| **2022** | **51.0%** | 54.4% | **−7.8%** | 32.4% | 54.9% |
+| 2023 | 62.8% | 52.1% | +6.4% | 28.9% | 70.9% |
+| 2024 | 61.9% | 52.7% | +1.7% | 18.6% | 74.8% |
+| 2025 | 57.4% | 50.6% | +3.8% | 19.4% | 69.9% |
+| **2026** | **56.0%** | 62.0% | **−18.9%** | 12.1% | 55.7% |
+
+RMSE skill is negative in **2 of 9 years**, and direction fails to beat that
+year's own base rate in the same two — a bad year here is bad on every measure at
+once. The confidence rule does not rescue them either (2022 at 54.9%, 2026 at
+55.7%): in a bad year the model is confidently wrong. The aggregate is carried by
+2019–2021.
+
+The pattern is not random. Volatility of the target fell from 34.7% across
+2018–2021 to 12.1% in 2026, and RMSE skill is a variance-explained measure — in a
+calm market there is little variance to explain and a handful of large misses
+dominate what is left. Direction is scale-free and degrades far more gently.
+That is the fragility this project documented *before* it measured it, which is
+why it asks to be judged on direction.
+
 **Part-load capacity.** A Capesize loads **152,320 t of a possible 176,500 t**
 for Paradip — 86% utilisation, 24,180 t left ashore every voyage. Given only the
 berth's draft and no deadweight figure, the model implies 155,820 DWT against a
@@ -167,6 +223,7 @@ yours.
 | `src/fetch_data.py` | Baltic + Yahoo + PortWatch + Open-Meteo → `data/raw` |
 | `src/build_panel.py` | Features and the target definition. |
 | `src/train_model.py` | **Module A** — Capesize direction, walk-forward. |
+| `src/procurement.py` | **Module A, part two** — what the forecast is worth, as a share of the freight rate. |
 | `src/live_model.py` | The BDRY control experiment. |
 | `src/ports.py` | **Module B** — port constraints and part-load capacity. |
 | `src/congestion.py` | **Module B** — live port activity. |
