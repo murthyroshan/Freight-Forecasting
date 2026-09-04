@@ -198,6 +198,120 @@ def main():
           all(abs(b[2] - len(o) / 4) <= 2 for b in band),
           [b[2] for b in band])
 
+    print('\n[9] the confidence tiering cannot see the future')
+    # This is the whole claim. "The strongest half of weeks" is only an
+    # honest thing to publish if a week can be placed in that half using
+    # information available when the call is made. A quantile over the
+    # full test period would need next year's predictions to rank this
+    # one, and the tier table would be a look-ahead artefact.
+    rng2 = np.random.default_rng(7)
+    n_t, burn = 900, 250
+    pa = rng2.normal(size=n_t)
+    ya = rng2.normal(size=n_t)
+
+    # Truncation invariance is the sharpest statement of it: scoring a
+    # shorter history must give the SAME answer for the rows both runs
+    # share. If it does not, later rows are informing earlier ones.
+    for share in (0.75, 0.5, 0.25):
+        full = tm.tier_mask(pa, share, burn)
+        part = tm.tier_mask(pa[:600], share, burn)
+        check('share %.0f%%: truncating the history leaves earlier '
+              'decisions untouched' % (share * 100),
+              np.array_equal(full[:600], part),
+              int(np.sum(full[:600] != part)))
+
+    # And the direct version: rewrite the tail with enormous values.
+    # A whole-period quantile would move the threshold and de-select
+    # rows in the first half; a causal one cannot.
+    pb = pa.copy()
+    pb[600:] = pa[600:] * 50 + 100
+    for share in (0.75, 0.5, 0.25):
+        check('share %.0f%%: a huge move in 2026 does not un-call a week '
+              'in 2022' % (share * 100),
+              np.array_equal(tm.tier_mask(pa, share, burn)[:600],
+                             tm.tier_mask(pb, share, burn)[:600]))
+
+    check('no row inside the burn-in is ever selected',
+          not tm.tier_mask(pa, 0.75, burn)[:burn].any())
+    m75 = tm.tier_mask(pa, 0.75, burn)
+    m50 = tm.tier_mask(pa, 0.50, burn)
+    m25 = tm.tier_mask(pa, 0.25, burn)
+    check('the tiers nest: strongest 25% is inside 50% is inside 75%',
+          bool((m25 <= m50).all() and (m50 <= m75).all()),
+          (int(m25.sum()), int(m50.sum()), int(m75.sum())))
+    for mk, want in ((m75, 0.75), (m50, 0.50), (m25, 0.25)):
+        got = mk.sum() / (n_t - burn)
+        check('a %.0f%% tier actually selects about %.0f%% of eligible '
+              'weeks (%.1f%%)' % (want * 100, want * 100, got * 100),
+              abs(got - want) < 0.05, got)
+
+    # Negative control. Tiering a model with no edge must not create
+    # one - if slicing by |prediction| lifted random noise above 50%,
+    # the lift on the real model would be an artefact of the slicing.
+    noise = tm.confidence_tiers(pa, ya, min_history=burn)
+    check('tiering pure noise stays near a coin flip: %s'
+          % ' '.join('%.1f%%' % (t['direction'] * 100)
+                     for t in noise['tiers']),
+          all(0.40 < t['direction'] < 0.60 for t in noise['tiers']),
+          [t['direction'] for t in noise['tiers']])
+    check('too short a history returns None rather than a tier table',
+          tm.confidence_tiers(pa[:100], ya[:100]) is None)
+
+    print('\n[10] the published tier table matches the predictions file')
+    conf = m['models'].get('confidence')
+    check('metrics.json carries the confidence tiers', bool(conf),
+          sorted(m['models']))
+    if conf:
+        yv = o['y'].to_numpy(dtype=float)
+        pv = o[conf['model']].to_numpy(dtype=float)
+        check('it is tiered on the model the page headlines (%s)'
+              % conf['model'], conf['model'] == m['best_model'],
+              (conf['model'], m['best_model']))
+        elig = np.zeros(len(o), dtype=bool)
+        elig[conf['min_history']:] = True
+        check('eligible weeks = scored rows minus the burn-in (%d)'
+              % conf['n_eligible'],
+              conf['n_eligible'] == len(o) - conf['min_history'],
+              (conf['n_eligible'], len(o), conf['min_history']))
+        hit = np.sign(pv) == np.sign(yv)
+        check('the "always" row recomputes from the predictions file',
+              abs(float(hit[elig].mean()) - conf['all_direction']) < 5e-9,
+              (float(hit[elig].mean()), conf['all_direction']))
+        # The baseline must be the eligible rows, not all of them -
+        # otherwise the lift is partly the burn-in being dropped.
+        check('and is NOT simply the headline over every scored row',
+              elig.sum() < len(o))
+        for t in conf['tiers']:
+            sel = tm.tier_mask(pv, t['share'], conf['min_history'])
+            check('the %.0f%% tier recomputes: %d weeks, %.1f%%'
+                  % (t['share'] * 100, t['n'], t['direction'] * 100),
+                  int(sel.sum()) == t['n']
+                  and abs(float(hit[sel].mean()) - t['direction']) < 5e-9,
+                  (int(sel.sum()), t['n']))
+            check('the %.0f%% tier is tested on independent windows, not '
+                  'rows (%d vs %d)' % (t['share'] * 100, t['n_effective'],
+                                       t['n']),
+                  t['n_effective'] == max(1, t['n'] // m['horizon_days']),
+                  (t['n_effective'], t['n']))
+            check('the %.0f%% tier null is the best CONSTANT call, never '
+                  'below a coin (%.3f)' % (t['share'] * 100, t['null_rate']),
+                  t['null_rate'] >= 0.5, t['null_rate'])
+        half = [t for t in conf['tiers'] if abs(t['share'] - 0.5) < 1e-9]
+        check('a strongest-half tier is published', len(half) == 1)
+        if half:
+            h = half[0]
+            check('the claim the page makes holds: the strongest half '
+                  '(%.1f%%) beats every week (%.1f%%)'
+                  % (h['direction'] * 100, conf['all_direction'] * 100),
+                  h['direction'] > conf['all_direction'],
+                  (h['direction'], conf['all_direction']))
+            check('and that lift is significant after adjusting for the '
+                  'tiers tested (p=%.5f)' % h['p_value'],
+                  h['significant'] and h['p_value'] < 0.05, h['p_value'])
+            check('but is not implausibly high either - over 85% on a '
+                  '5-day freight return would mean a leak',
+                  h['direction'] < 0.85, h['direction'])
+
     print('\n' + '=' * 62)
     if FAIL:
         print('  %d FAILED:' % len(FAIL))

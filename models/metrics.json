@@ -73,6 +73,48 @@
       "n_candidates": 3,
       "significant": true
     },
+    "confidence": {
+      "signal": "abs_prediction",
+      "min_history": 250,
+      "n_eligible": 1721,
+      "all_direction": 0.6176641487507263,
+      "tiers": [
+        {
+          "share": 0.75,
+          "n": 1320,
+          "coverage": 0.7669959325973271,
+          "direction": 0.6537878787878788,
+          "lift_pp": 3.6123730037152524,
+          "n_effective": 264,
+          "null_rate": 0.5053030303030304,
+          "p_value": 1.8239424096026991e-06,
+          "significant": true
+        },
+        {
+          "share": 0.5,
+          "n": 894,
+          "coverage": 0.5194654270772806,
+          "direction": 0.6957494407158836,
+          "lift_pp": 7.808529196515734,
+          "n_effective": 178,
+          "null_rate": 0.5145413870246085,
+          "p_value": 1.8096616150346057e-06,
+          "significant": true
+        },
+        {
+          "share": 0.25,
+          "n": 433,
+          "coverage": 0.2515979081929111,
+          "direction": 0.7251732101616628,
+          "lift_pp": 10.750906141093653,
+          "n_effective": 86,
+          "null_rate": 0.5080831408775982,
+          "p_value": 0.00014198159854578993,
+          "significant": true
+        }
+      ],
+      "model": "ridge"
+    },
     "folds": [
       {
         "fold": 0,

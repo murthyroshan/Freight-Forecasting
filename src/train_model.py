@@ -215,6 +215,96 @@ def score(y, p):
     return rmse, mae, da
 
 
+# Shares of weeks a desk might act on, strongest first.
+TIER_SHARES = (0.75, 0.50, 0.25)
+TIER_BURN_IN = 250    # ~1 trading year before any week is eligible
+
+
+def tier_mask(pred, share, min_history=TIER_BURN_IN):
+    """Which rows fall in the strongest `share` of calls seen SO FAR.
+
+    Extracted from confidence_tiers so a test can assert the causality
+    directly, the way folds() is extracted to let a test assert the
+    purge gap. The whole claim rests on this function: row i is judged
+    against a quantile of rows [0, i), so appending later data can
+    never change a decision already taken.
+    """
+    a = np.abs(np.asarray(pred, dtype=float))
+    sel = np.zeros(len(a), dtype=bool)
+    for i in range(min_history, len(a)):
+        sel[i] = a[i] >= float(np.quantile(a[:i], 1.0 - share))
+    return sel
+
+
+def confidence_tiers(pred, y, shares=TIER_SHARES, min_history=TIER_BURN_IN):
+    """Direction accuracy on the weeks the model is most sure about.
+
+    The model does not have to answer every week. A chartering desk
+    fixes a handful of cargoes a quarter, so the number that matters
+    is not the average call - it is whether the calls it acts on are
+    better than the ones it declines to make.
+
+    The confidence signal is |prediction|. That is known the moment
+    the model runs: it is built from the prediction alone, needs no
+    outcome, and so nothing here waits for the horizon to elapse.
+
+    The THRESHOLD is the part that could leak. Taking "the strongest
+    half" as a quantile over the whole test period would need next
+    year's predictions to decide whether today's is in the top half.
+    So the threshold at row i is taken over rows STRICTLY BEFORE i,
+    and the first `min_history` rows are not eligible at all, because
+    there is not yet enough history to place them. That is the same
+    expanding-window discipline the folds use, applied to the
+    abstention rule instead of to the fit.
+
+    The baseline is measured on the same eligible rows, so the lift is
+    like-for-like and not an artefact of dropping the burn-in.
+
+    Returns None when there is not enough history to tier at all.
+    """
+    from scipy import stats as _st
+    p = np.asarray(pred, dtype=float)
+    y = np.asarray(y, dtype=float)
+    a = np.abs(p)
+    n = len(p)
+    if n <= min_history:
+        return None
+
+    hit = np.sign(p) == np.sign(y)
+    eligible = np.zeros(n, dtype=bool)
+    eligible[min_history:] = True
+    all_dir = float(hit[eligible].mean())
+
+    out = {'signal': 'abs_prediction', 'min_history': int(min_history),
+           'n_eligible': int(eligible.sum()), 'all_direction': all_dir,
+           'tiers': []}
+    for share in shares:
+        # past predictions only - a[i] itself is excluded, so the
+        # threshold cannot be moved by the row it is judging
+        sel = tier_mask(p, share, min_history)
+        d = float(hit[sel].mean()) if sel.any() else float('nan')
+        # Is the tier's edge real, or a small sample that went our way?
+        # Same discipline as the headline test: independent windows
+        # rather than rows, because five-day targets overlap, and the
+        # null is the best CONSTANT call on those same rows - a tier
+        # that quietly selects mostly-rising weeks has to beat "always
+        # up" on them, not a coin. Bonferroni over the tiers.
+        n_eff = max(1, int(sel.sum()) // HORIZON)
+        up = float((y[sel] > 0).mean()) if sel.any() else 0.5
+        null = min(max(up, 1.0 - up), 0.999)
+        raw = float(_st.binomtest(int(round(d * n_eff)), n_eff, null,
+                                  alternative='greater').pvalue)
+        out['tiers'].append({'share': float(share), 'n': int(sel.sum()),
+                             'coverage': float(sel.sum() / eligible.sum()),
+                             'direction': d,
+                             'lift_pp': (d - all_dir) * 100,
+                             'n_effective': n_eff, 'null_rate': null,
+                             'p_value': min(1.0, raw * len(shares)),
+                             'significant': bool(
+                                 min(1.0, raw * len(shares)) < 0.05)})
+    return out
+
+
 if __name__ == '__main__':
     os.makedirs(MODELS, exist_ok=True)
     df = build_panel.build()
@@ -305,6 +395,28 @@ if __name__ == '__main__':
                                  'p_value': pval, 'p_value_raw': raw,
                                  'n_candidates': len(candidates),
                                  'significant': bool(pval < 0.05)}
+
+    # The model is allowed to stay quiet. Score the calls a desk would
+    # actually act on, using the same model that was just tested.
+    # Tiered on the model the dashboard and the intervals report, not
+    # on the direction-test's pick - otherwise the "vs all" column
+    # would be measured against a headline the page never shows.
+    ct = confidence_tiers(preds[CONF_ON][m], y)
+    if ct:
+        print('')
+        print('  direction by confidence (threshold from PAST predictions '
+              'only, %d-row burn-in):' % ct['min_history'])
+        print('    %-28s %7s %8s %9s'
+              % ('act only when...', 'weeks', 'dir%', 'vs all'))
+        print('    %-28s %7d %7.1f%% %9s'
+              % ('always', ct['n_eligible'], ct['all_direction'] * 100, '-'))
+        for t in ct['tiers']:
+            print('    %-28s %7d %7.1f%% %+8.1fpp   p=%.4f %s'
+                  % ('the call is strongest %d%%' % (t['share'] * 100),
+                     t['n'], t['direction'] * 100, t['lift_pp'],
+                     t['p_value'], 'ok' if t['significant'] else 'NOT sig'))
+        ct['model'] = CONF_ON
+        results['confidence'] = ct
 
     print('\n  per-fold RMSE (is the win consistent?):')
     print('    %-4s %-11s %-11s %7s %7s %7s %7s'

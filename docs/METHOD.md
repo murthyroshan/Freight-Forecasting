@@ -99,6 +99,57 @@ acts when the move is large enough to matter, which is exactly where the edge
 sits, and it is why the aggregate looks weak in a calm market: most weeks are
 small-move weeks, and nobody can call those.
 
+### Knowing in advance which weeks to trust
+
+The table above has a flaw as a decision aid: it sorts on the realised move,
+which nobody knows at the time. It says the edge is concentrated, but not how to
+find it prospectively.
+
+The model's own conviction does that. Sorting instead by |prediction| — available
+the moment the model runs, needing no outcome:
+
+| Act only when… | Weeks | Independent windows | Direction | vs all weeks | p |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| always | 1,721 | 344 | 61.8% | — | — |
+| strongest 75% | 1,320 | 264 | 65.4% | +3.6 pp | <0.0001 |
+| strongest 50% | 894 | 178 | **69.6%** | +7.8 pp | <0.0001 |
+| **strongest 25%** | 433 | 86 | **72.5%** | **+10.8 pp** | 0.0001 |
+
+Three things make this an honest table rather than a flattering one.
+
+**The threshold is causal.** "The strongest half" is a quantile of predictions
+from *strictly before* the week being judged, so appending later data can never
+change a decision already taken. A quantile over the whole test period — the
+obvious implementation — would need next year's predictions to rank this one, and
+the whole table would be a look-ahead artefact. `tier_mask()` is factored out for
+exactly the reason `folds()` is: so a test can assert the property directly.
+`tests/test_walkforward.py` checks that scoring a truncated history returns
+identical decisions for the rows the two runs share, and that multiplying the
+last third of the predictions by fifty does not un-call a single earlier week.
+
+**The baseline is the same rows.** The first 250 scored weeks cannot be ranked
+— there is no history yet to place them against — so they are excluded from every
+row of the table, the *always* row included. That is why it reads 61.8% rather
+than the 61.7% headline. Comparing a tier against all 1,971 rows would credit the
+tiering with the burn-in it merely dropped.
+
+**The null is not a coin.** Each p-value tests that tier against the best
+constant call on its own weeks, on non-overlapping windows rather than rows, and
+is Bonferroni-adjusted for the three tiers. A tier that quietly selected
+mostly-rising weeks would have to beat "always up" on them.
+
+The remaining question is whether slicing by |prediction| would lift *any*
+model, in which case this measures the slicing and not the model. It does not:
+run through the same tiering, random predictions on random outcomes score
+49–53%, and the suite asserts it.
+
+What this changes in practice is the product. The honest claim is not "the model
+is right 62% of the time"; it is "the model is right 62% of the time if you make
+it answer every week, and 70% on the half of weeks it has something to say
+about — and it tells you which half in advance." Charterers do not fix cargoes
+weekly. They fix a few a quarter, and can wait for the weeks the model is
+confident about.
+
 ### Why ridge beats the gradient-boosted model
 
 Daily freight autocorrelation is ~0.99 and the five-day targets overlap, so
