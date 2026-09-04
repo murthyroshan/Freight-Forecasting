@@ -99,6 +99,29 @@ nothing, and says so. The pattern holds in the recent period too, weaker:
 *Lift is direction accuracy minus the best constant guess on those same rows, so
 it cannot be won by always saying "up".*
 
+**And the model can tell you in advance which weeks those are.** The table above
+sorts by how much the rate turned out to move — something you only learn
+afterwards. This one sorts by the size of the prediction, which is known the
+moment the model runs:
+
+| Act only when… | Weeks | Direction | vs all weeks |
+| :--- | ---: | ---: | ---: |
+| always — a call every week | 1,721 | 61.8% | — |
+| the call is in the strongest 75% | 1,320 | 65.4% | +3.6 pp |
+| the call is in the strongest 50% | 894 | **69.6%** | +7.8 pp |
+| **the call is in the strongest 25%** | 433 | **72.5%** | **+10.8 pp** |
+
+A desk fixing a handful of cargoes a quarter does not need a call every week, and
+this is the number it should be judged on. The threshold for "the strongest half"
+is a quantile of *earlier* predictions only, so no week is ranked using anything
+from after it — the first 250 scored weeks are ineligible for that reason, which
+is why the *always* row reads 61.8% and not 61.7%. Each tier is significant
+against the best constant call on its own weeks, counted in non-overlapping
+windows and adjusted for testing three tiers. Tiering pure noise the same way
+returns 49–53%, so the slicing is not what creates the lift; `tests/test_walkforward.py`
+asserts that, and that truncating the history leaves every earlier decision
+unchanged.
+
 **Part-load capacity.** A Capesize loads **152,320 t of a possible 176,500 t**
 for Paradip — 86% utilisation, 24,180 t left ashore every voyage. Given only the
 berth's draft and no deadweight figure, the model implies 155,820 DWT against a

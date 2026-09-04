@@ -449,6 +449,26 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
     </div>
 
     <div class="card">
+      <div class="cap">Direction accuracy by confidence &middot; the model may stay quiet</div>
+      <p class="note" style="margin:0 0 8px">A chartering desk fixes a handful of cargoes a
+        quarter, so the number that matters is not the average call &mdash; it is whether the
+        calls it acts on beat the ones it declines to make. Confidence here is the size of the
+        prediction, which is known the moment the model runs and needs no outcome. The threshold
+        for &ldquo;the strongest half&rdquo; is a quantile of <em>earlier</em> predictions only,
+        so no week is ranked using anything from after it; the first
+        <span id="c_burn">&mdash;</span> scored weeks are not eligible for that reason, and the
+        <em>always</em> row is measured on the same eligible weeks, so the comparison is
+        like-for-like rather than an artefact of dropping the burn-in.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Act only when&hellip;</th><th class="n">Weeks</th>
+          <th class="n">Direction</th><th class="n">vs all weeks</th>
+          <th class="n">p</th><th></th></tr></thead>
+        <tbody id="confBody"><tr><td colspan="6"><span class="skel"></span></td></tr></tbody>
+      </table></div>
+      <p class="note" id="confNote"></p>
+    </div>
+
+    <div class="card">
       <div class="cap">Control experiment</div>
       <p class="note" style="margin:0 0 8px">The Baltic Capesize index is a daily broker
         <em>survey</em>; panellists anchor on the previous print, so its returns are
@@ -755,6 +775,8 @@ async function loadMetrics() {
               <td><span class="tag ${win ? 't-good' : 't-bad'}">${
                   win ? 'beats baseline' : 'loses'}</span></td></tr>`; }).join('');
 
+        fillConfidence(m.models.confidence);
+
         // /api/dates and /api/control are scored separately from here
         // on. They used to share this function's single try, so a
         // failure in either one printed "model artefacts not found"
@@ -769,6 +791,46 @@ async function loadMetrics() {
             'Model artefacts not found. Run: python -m src.fetch_data '
             + '&& python -m src.build_panel && python -m src.train_model';
     }
+}
+
+function fillConfidence(c) {
+    const body = document.getElementById('confBody');
+    const note = document.getElementById('confNote');
+    // An artefact from before this table existed has no tiers. Say so
+    // rather than leaving a skeleton pulsing for the life of the tab.
+    if (!c || !Array.isArray(c.tiers) || !c.tiers.length) {
+        body.innerHTML = '<tr><td colspan="6">This model run did not report confidence '
+            + 'tiers. Re-run <code>python -m src.train_model</code>.</td></tr>';
+        note.textContent = '';
+        return;
+    }
+    // pct() appends a % sign; these are percentage POINTS, so the sign
+    // is applied here instead of borrowing a formatter that would read
+    // "+3.6%pp".
+    const lift = v => (v === null || v === undefined || !isFinite(v))
+        ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + 'pp';
+    document.getElementById('c_burn').textContent = nloc(c.min_history);
+    const rows = ['<tr><td>always &mdash; a call every week</td>'
+        + '<td class="n">' + nloc(c.n_eligible) + '</td>'
+        + '<td class="n">' + nfix(c.all_direction * 100, 1) + '%</td>'
+        + '<td class="n">&mdash;</td><td class="n">&mdash;</td><td></td></tr>'];
+    c.tiers.forEach(t => {
+        rows.push('<tr><td>the call is in the strongest ' + nfix(t.share * 100, 0)
+            + '% of weeks</td>'
+            + '<td class="n">' + nloc(t.n) + '</td>'
+            + '<td class="n" style="font-weight:700">' + nfix(t.direction * 100, 1) + '%</td>'
+            + '<td class="n">' + lift(t.lift_pp) + '</td>'
+            + '<td class="n">' + (t.p_value < 0.0001 ? '&lt;0.0001' : nfix(t.p_value, 4))
+            + '</td><td><span class="tag ' + (t.significant ? 't-good' : 't-bad') + '">'
+            + (t.significant ? 'significant' : 'not significant') + '</span></td></tr>');
+    });
+    body.innerHTML = rows.join('');
+    const top = c.tiers[c.tiers.length - 1];
+    note.textContent = 'Tiered on the ' + c.model + ' model — the same one the figures '
+        + 'above report. Each p-value tests that tier against the best constant call on those '
+        + 'same weeks, not against a coin, counted in non-overlapping windows ('
+        + top.n_effective + ' of them in the narrowest tier) and adjusted for testing '
+        + c.tiers.length + ' tiers.';
 }
 
 async function fillDates(dr) {
