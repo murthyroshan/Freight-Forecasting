@@ -1,0 +1,19 @@
+# Pinned to what this project was actually built and verified against.
+# Python 3.14 on Windows.
+#
+#   python -m venv .venv
+#   .venv\Scripts\pip install -r requirements.txt
+#
+# xlrd is required to read the Mendeley Baltic workbook, which is a
+# legacy .xls (OLE2) file - openpyxl cannot open it.
+Flask==3.1.3
+pandas==3.0.5
+numpy==2.5.2
+scikit-learn==1.9.0
+scipy==1.18.1
+lightgbm==4.7.0
+yfinance==1.7.0
+requests==2.34.2
+pyarrow==25.0.1
+xlrd==2.0.2
+python-dotenv==1.2.3

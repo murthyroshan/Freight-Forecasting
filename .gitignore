@@ -1,0 +1,74 @@
+# Secrets - real values live in .env, which is NEVER committed
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# Data: commit the fetch scripts, never the data itself.
+# Must be data/* not data/ - git cannot re-include a file whose parent
+# directory is excluded, so a bare data/ kills the !data/.gitkeep below.
+data/*
+*.csv
+*.parquet
+!data/.gitkeep
+
+# Spreadsheets are source data, never source code. The Mendeley Baltic
+# workbook is a .xls and lives under data/, but this catches a stray copy
+# dropped anywhere else in the tree.
+*.xls
+*.xlsx
+*.xlsm
+
+# Trained model artefacts. A committed .pkl is how a model nobody can
+# reproduce gets passed around as if it were evidence. Binaries stay out;
+# retrain from source instead.
+/models/*
+*.pkl
+*.joblib
+*.h5
+*.keras
+*.pt
+
+# ...but DO commit the scored metrics. They are small, human-readable,
+# and they are the evidence that a number in the pitch came from a real
+# walk-forward run. Re-include after /models/* excludes the directory.
+!/models/*.json
+
+# Frontend
+node_modules/
+dist/
+build/
+
+# Test / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*~
+
+# Office lock files. An open Word or Excel document leaves a '~$name'
+# sibling behind, and it is easy to commit one without noticing.
+~$*
+
+# Scratch
+*.bak
+*.tmp
+*.orig
+*.rej
