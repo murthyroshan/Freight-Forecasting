@@ -33,7 +33,8 @@ import pandas as pd
 from flask import Flask, request, jsonify, Response
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from src import paths, ports, congestion, risk  # noqa: E402
+from src import (paths, ports, congestion, risk, optimise,  # noqa: E402
+                 ballast)
 
 app = Flask(__name__)
 
@@ -70,6 +71,24 @@ def _finite(value):
     except (TypeError, ValueError):
         return None
     return f if math.isfinite(f) else None
+
+
+def _json_safe(obj):
+    """_finite, applied through a whole nested payload.
+
+    _finite above takes one number. Handing it a dict returns None and
+    silently blanks the entire response, which is a worse failure than
+    the one it exists to prevent, so walk the structure instead.
+    """
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, bool) or obj is None or isinstance(obj, str):
+        return obj
+    if isinstance(obj, (int, float)) or hasattr(obj, 'dtype'):
+        return _finite(obj)
+    return obj
 
 
 METRICS = _load_json(METRICS_PATH)
@@ -233,6 +252,116 @@ def api_port_options():
         'best': opts[0] if opts else None,
         'n': len(opts),
     })
+
+
+@app.route('/api/ballast')
+def api_ballast():
+    """Deliverable (c), the half that is measurable.
+
+    Idle time is not here and cannot be: PortWatch reports arrivals, not
+    arrivals and departures, so there is no dwell to compute. What is
+    here is the empty leg - the share of inbound dry bulk tonnage a berth
+    cannot match with outbound.
+    """
+    try:
+        rows = ballast.profile()
+    except Exception as exc:
+        return jsonify({'error': 'ballast profile unavailable: %s'
+                        % exc}), 503
+    return jsonify(_json_safe({
+        'ports': rows,
+        'window_days': ballast.WINDOW_DAYS,
+        'min_import_t_per_day': ballast.MIN_IMPORT_T_PER_DAY,
+        'parity': ballast.PARITY,
+        'measures': 'tonnage in against tonnage out, not waiting time',
+        'caveat': ('Aggregate matching is an upper bound on backhaul - a '
+                   'given ship may not be able to take a given export '
+                   'cargo - so the empty share is a LOWER bound on ballast '
+                   'sailing. Idle and demurrage are not measured here at '
+                   'all: PortWatch publishes arrivals, not departures.'),
+    }))
+
+
+@app.route('/api/optimise', methods=['POST'])
+def api_optimise():
+    """Deliverable (b). Which classes, into which berths, at what split.
+
+    Every cost here arrives in the request body. That is deliberate: this
+    repository has no verified freight, lighterage or haulage figures for
+    this lane, so it asks rather than assumes, and the answer says so.
+    """
+    data = request.json or {}
+
+    def _money(obj, name):
+        if obj is None:
+            return None
+        if not isinstance(obj, dict):
+            raise ValueError('%s must be an object keyed by name' % name)
+        out = {}
+        for k, v in obj.items():
+            if v is None or v == '':
+                continue
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                raise ValueError('%s[%s] must be a number, got %r'
+                                 % (name, k, v))
+            if not math.isfinite(f) or f < 0:
+                raise ValueError('%s[%s] must be a non-negative finite '
+                                 'number, got %r' % (name, k, v))
+            out[k] = f
+        return out
+
+    try:
+        parcel = data.get('parcel_t')
+        if parcel is None:
+            raise ValueError("'parcel_t' is required")
+        parcel = float(parcel)
+        if not math.isfinite(parcel) or parcel < 1:
+            raise ValueError("'parcel_t' must be at least 1 tonne")
+        voyage = _money(data.get('voyage_cost'), 'voyage_cost') or {}
+        if not voyage:
+            raise ValueError("'voyage_cost' is required - this project has "
+                             'no verified freight rates and will not assume '
+                             'one')
+        kw = dict(
+            port_cost=_money(data.get('port_cost'), 'port_cost'),
+            lighterage_cost=_money(data.get('lighterage_cost'),
+                                   'lighterage_cost'),
+            inland_cost=_money(data.get('inland_cost'), 'inland_cost'),
+            max_calls=_money(data.get('max_calls'), 'max_calls'),
+        )
+        # The empty leg. The share is measured from arrivals; what a
+        # repositioning voyage costs is not, so it arrives as a fraction
+        # of a laden voyage that the caller states.
+        # Not named `pct`: that is a module-level helper here, and
+        # shadowing it would make every later call in this function hit a
+        # float instead of the function.
+        ballast_pct = data.get('ballast_pct')
+        shares = None
+        if ballast_pct not in (None, ''):
+            penalty, shares = ballast.ballast_penalty(voyage, ballast_pct)
+            kw['ballast_cost'] = penalty
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    try:
+        out = optimise.compare(parcel, voyage, **kw)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:                       # solver blew up
+        return jsonify({'error': 'selection failed: %s' % exc}), 503
+
+    out['classes'] = sorted(ports.VESSELS)
+    out['ports'] = sorted(ports.PORTS)
+    out['ballast_shares'] = shares
+    out['ballast_pct'] = (float(ballast_pct)
+                          if ballast_pct not in (None, '') else None)
+    out['note'] = ('Capacities are computed from draft, TPC and dock water '
+                   'allowance, and the empty-leg share from PortWatch '
+                   'tonnage. Costs are yours - nothing here is a freight '
+                   'rate this project has verified.')
+    return jsonify(_json_safe(out))
 
 
 @app.route('/api/congestion')

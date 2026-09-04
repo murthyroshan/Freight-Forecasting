@@ -480,6 +480,148 @@ def main():
           'text/html' in r.headers.get('Content-Type', ''),
           r.headers.get('Content-Type'))
 
+    print('\n[20] /api/optimise agrees with src/optimise.py')
+    from src import optimise as _opt
+    from src import ports as _ports
+    VOY = {'Handysize': 620000, 'Supramax': 780000, 'Panamax': 1050000,
+           'Post-Panamax': 1180000, 'Capesize': 1500000,
+           'Newcastlemax': 1620000}
+    PRT = {p: 45000.0 for p in _ports.PORTS}
+    INL = {p: 8.0 for p in _ports.PORTS}
+    body = {'parcel_t': 300000, 'voyage_cost': VOY,
+            'port_cost': PRT, 'inland_cost': INL}
+    r = requests.post(BASE + '/api/optimise', json=body, timeout=60)
+    check('the endpoint answers 200', r.status_code == 200, r.text[:70])
+    d = r.json()
+    local = _opt.compare(300000, VOY, port_cost=PRT, inland_cost=INL)
+    check('the served total matches the module exactly',
+          d['best']['total_cost'] == local['best']['total_cost'],
+          (d['best']['total_cost'], local['best']['total_cost']))
+    check('and so does the fleet it chose',
+          [(l['vessel'], l['port'], l['voyages']) for l in d['best']['legs']]
+          == [(l['vessel'], l['port'], l['voyages'])
+              for l in local['best']['legs']])
+    b = d['best']
+    check('tonnes across the legs equal the parcel',
+          abs(sum(l['tonnes'] for l in b['legs']) - 300000) < 0.5,
+          sum(l['tonnes'] for l in b['legs']))
+    check('cost per tonne is the total over the parcel',
+          abs(b['cost_per_t'] - b['total_cost'] / 300000) < 0.01)
+    check('every voyage count served is a whole number',
+          all(float(l['voyages']).is_integer() for l in b['legs']))
+    check('no leg uses a berth its class cannot enter',
+          all(_ports.can_serve(l['vessel'], l['port'])['verdict']
+              in _opt.USABLE for l in b['legs']),
+          [(l['vessel'], l['port']) for l in b['legs']])
+    feas = [a for a in d['alternatives'] if a['feasible']]
+    check('no single-class fleet beats the optimum',
+          all(a['cost_per_t'] >= b['cost_per_t'] - 0.01 for a in feas),
+          [(a['label'], a['cost_per_t']) for a in feas[:2]])
+
+    print('\n[21] the endpoint will not invent a freight rate')
+    r = requests.post(BASE + '/api/optimise',
+                      json={'parcel_t': 300000}, timeout=30)
+    check('a request with no costs is refused', r.status_code == 400,
+          r.status_code)
+    check('and says why, in those words',
+          'no verified freight rates' in r.json().get('error', ''),
+          r.json().get('error', '')[:80])
+    for bad in ({'parcel_t': 0, 'voyage_cost': VOY},
+                {'parcel_t': -5, 'voyage_cost': VOY},
+                {'parcel_t': 'x', 'voyage_cost': VOY},
+                {'parcel_t': 300000, 'voyage_cost': {'Capesize': -1}},
+                {'parcel_t': 300000, 'voyage_cost': {'Capesize': 'x'}},
+                {'parcel_t': 300000, 'voyage_cost': 'notadict'}):
+        r = requests.post(BASE + '/api/optimise', json=bad, timeout=30)
+        check('rejected: %s' % str(bad)[:52], r.status_code == 400,
+              r.status_code)
+    check('the served note says the costs are not ours',
+          'nothing here is a freight rate this project has verified'
+          in d['note'], d['note'][:70])
+
+    print('\n[22] the page wires the fleet selector')
+    for hook in ('solveFleet', 'buildCostInputs', 'voyageCosts', 'fleetOut',
+                 'api/optimise', 'YOUR COSTS'):
+        check('page wires %r' % hook, hook in html)
+    check('the panel states plainly that the costs are not sourced',
+          'illustrative figures, not sourced ones' in html)
+
+    print('\n[23] /api/ballast agrees with src/ballast.py')
+    from src import ballast as _bal
+    bl = requests.get(BASE + '/api/ballast', timeout=60).json()
+    local = _bal.profile()
+    check('a row per discharge berth', len(bl['ports']) == len(local),
+          (len(bl['ports']), len(local)))
+    for served, want in zip(bl['ports'], local):
+        check('%s served exactly as computed' % served['port'],
+              served['ratio'] == want['ratio']
+              and served['ballast_share'] == want['ballast_share'],
+              (served['ratio'], want['ratio']))
+    scored = [r for r in bl['ports'] if r['reliable']]
+    check('a ballast share is always 1 - ratio, floored at zero',
+          all(abs(r['ballast_share'] - max(0.0, 1 - r['ratio'])) < 5e-4
+              for r in scored))
+    check('an unscored berth carries no share at all',
+          all(r['ballast_share'] is None
+              for r in bl['ports'] if not r['reliable']))
+    check('the endpoint says what it does not measure',
+          'not waiting time' in bl['measures'], bl['measures'])
+    check('and that the empty share is a lower bound',
+          'LOWER bound' in bl['caveat'], bl['caveat'][:70])
+
+    print('\n[24] pricing the empty leg changes the answer, and says where')
+    VOY2 = {'Handysize': 620000, 'Supramax': 780000, 'Panamax': 1050000,
+            'Post-Panamax': 1180000, 'Capesize': 1500000,
+            'Newcastlemax': 1620000}
+    P2 = {p: 45000.0 for p in _ports.PORTS}
+    I2 = {p: 8.0 for p in _ports.PORTS}
+    base_body = {'parcel_t': 150000, 'voyage_cost': VOY2,
+                 'port_cost': P2, 'inland_cost': I2}
+    free = requests.post(BASE + '/api/optimise', timeout=60,
+                         json=dict(base_body)).json()
+    charged = requests.post(BASE + '/api/optimise', timeout=60,
+                            json=dict(base_body, ballast_pct=0.45)).json()
+    check('with no ballast_pct, no shares are served',
+          free.get('ballast_shares') is None, free.get('ballast_shares'))
+    check('with one, the measured shares come back',
+          charged['ballast_shares']['Haldia'] > 0.9,
+          charged.get('ballast_shares'))
+    check('Paradip has a return cargo, so its share is zero',
+          charged['ballast_shares']['Paradip'] == 0.0)
+    check('a berth with no arrivals feed is served as null, not zero',
+          charged['ballast_shares']['Gangavaram'] is None,
+          charged['ballast_shares']['Gangavaram'])
+
+    # The failure mode this introduces: an unmeasured berth looking
+    # cheap because nobody has data on it.
+    for leg in charged['best']['legs']:
+        if charged['ballast_shares'].get(leg['port']) is None:
+            check('%s is flagged ballast_priced=False' % leg['port'],
+                  leg['ballast_priced'] is False)
+    check('every unpriced berth used is listed',
+          set(charged['best']['ballast_unpriced'])
+          == {l['port'] for l in charged['best']['legs']
+              if not l['ballast_priced']},
+          charged['best']['ballast_unpriced'])
+
+    check('ballast_pct out of range is refused',
+          requests.post(BASE + '/api/optimise', timeout=30,
+                        json=dict(base_body,
+                                  ballast_pct=1.4)).status_code == 400)
+    check('and a non-numeric one too',
+          requests.post(BASE + '/api/optimise', timeout=30,
+                        json=dict(base_body,
+                                  ballast_pct='x')).status_code == 400)
+
+    print('\n[25] the page renders the empty leg')
+    for hook in ('loadBallast', 'ballastBody', 'ballastPct',
+                 'ballast_priced', 'Empty leg'):
+        check('page wires %r' % hook, hook in html)
+    check('the panel separates what is measured from what is not',
+          'Not measured:' in html)
+    check('and never claims to measure waiting time',
+          'waiting time, which PortWatch cannot give us' in html)
+
     print('\n' + '=' * 62)
     print('\n[15] /api/risk agrees with src/risk.py')
     from src import risk
