@@ -97,7 +97,13 @@ def baltic():
     return out
 
 
-def build():
+def _frame():
+    """Every column, before anything is dropped.
+
+    Split out of build() so a forecast for a day that has no outcome yet
+    runs literally the same feature code as training, rather than a copy
+    of it that can drift. build() is this plus the dropna it always did.
+    """
     bal = baltic()
 
     # Market series, aligned onto Baltic's trading calendar. Baltic
@@ -184,10 +190,60 @@ def build():
     # Keep the raw level for reporting/plots only - dropped before fit.
     df['capesize_level'] = cape
 
-    # Warm-up rows (63-day window) and the final HORIZON rows (no target
-    # yet) are dropped rather than imputed.
-    df = df.dropna()
     return df
+
+
+FEATURE_EXCLUDE = ('y', 'capesize_level')
+
+
+def feature_names(df):
+    """The model's inputs: every column that is not the target or the
+    level kept for plotting. Defined once so the live path and the
+    training path cannot disagree about what the features are."""
+    return [c for c in df.columns if c not in FEATURE_EXCLUDE]
+
+
+def build():
+    """The panel used for fitting and scoring.
+
+    Warm-up rows (the 63-day windows) and the final HORIZON rows (no
+    target yet) are dropped rather than imputed.
+    """
+    return _frame().dropna()
+
+
+def features_asof(as_of=None):
+    """Feature rows for the days that have no outcome yet.
+
+    The target at row t is built from t+HORIZON, so the last few trading
+    days always have complete features and no y. build() drops them,
+    correctly - they cannot be scored - and that is exactly why nothing
+    in this project has ever forecast forward: the only rows that could
+    be were the ones being thrown away.
+
+    "No outcome yet" is defined as strictly AFTER the last row that has
+    one, never as "y is missing". A non-positive Capesize print also
+    produces a missing y, and those sit in the middle of history; a
+    forecast built on one would be presented as tomorrow's while
+    describing 2020.
+
+    A row whose features are not all present is left out rather than
+    imputed. A stale market feed is a reason to say the forecast cannot
+    be made, not to quietly fill in yesterday's dollar and call the
+    answer current.
+
+    Returns an empty frame - not an error - when the data is too old to
+    have a forward window, so a caller can report staleness itself.
+    """
+    f = _frame()
+    have = f['y'].notna()
+    if not have.any():
+        return f.iloc[0:0]
+    fwd = f[f.index > f.index[have][-1]]
+    fwd = fwd[fwd[feature_names(f)].notna().all(axis=1)]
+    if as_of is not None:
+        fwd = fwd[fwd.index <= pd.Timestamp(as_of)]
+    return fwd
 
 
 if __name__ == '__main__':

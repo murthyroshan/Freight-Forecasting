@@ -1,17 +1,33 @@
 """
-Module A-live: the model that can actually run today.
+Module A-live: the falsification control, on a traded proxy.
 
-Why this exists as a separate model.
+WHAT THIS IS NOW, AND WHAT IT USED TO BE.
 
-  The Capesize model in train_model.py is the scientifically stronger
-  one - it is fitted on real Baltic Exchange index history. But its
-  features are built from Baltic index levels, and our licensed-clean
-  copy of those stops on 2019-07-31. Current Baltic assessments are a
-  paid feed we are not licensed to redistribute, so that model can score
-  history and cannot forecast today. Wiring it to a live dashboard would
-  be dishonest.
+  This file was written when the Baltic history in this repository was
+  the licensed copy alone, which stops on 2019-07-31. The model in
+  train_model.py could therefore score history and could not be asked
+  about today, and this BDRY-based path existed to fill that gap.
 
-  So the live path is fitted on BDRY, the Breakwave Dry Bulk ETF, which
+  That is no longer true. src/fetch_data.py splices a validated
+  extension onto the licensed series and the panel now runs to the
+  present, so src/forecast.py asks the Capesize model itself for the
+  days ahead - on the same features, with a conformal interval and the
+  horizon curve. The sentence this docstring used to carry - that
+  the main model could only score history and never be asked about
+  the days ahead - was a statement about our own capability that had
+  quietly stopped being true, which is exactly the kind of claim the
+  rest of this repository refuses to leave standing.
+
+  What this module is still for is the falsification test, and that is
+  the better job for it. The Baltic index is a daily broker SURVEY
+  whose panellists anchor on the previous print, so its returns are
+  autocorrelated and genuinely forecastable. BDRY is a liquid, arbitraged
+  ETF over the same underlying. Running the identical method on it and
+  scoring WELL there would mean claiming to beat a futures market, which
+  is a red flag rather than a feature. We score badly on it, deliberately
+  reported, and the dashboard shows both side by side.
+
+  The live path is fitted on BDRY, the Breakwave Dry Bulk ETF, which
   holds actual freight futures (Capesize 5TC 50%, Panamax 4TC 40%,
   Supramax 10TC 10%) and trades daily through yesterday. The bridge is
   measured, not assumed: over the 333 trading days where our Baltic
@@ -22,7 +38,10 @@ Why this exists as a separate model.
   roll yield makes it drift away from spot. Only returns are used, and
   the app never quotes a dollar rate from it.
 
-Run:  python live_model.py          (evaluate + fit + save)
+Run:  python -m src.live_model      (evaluate + fit + save)
+
+See also: src/forecast.py, which is where a forward Capesize call
+comes from now.
 """
 
 import os

@@ -165,6 +165,12 @@ tbody tr:last-child td{border-bottom:0}
 tbody tr{transition:background .15s}
 tbody tr:hover{background:var(--sunk)}
 td.n,th.n{text-align:right;font-family:var(--fm)}
+/* An explicit display in a class rule beats the user agent's
+   [hidden]{display:none}, so el.hidden = true silently does nothing to
+   anything styled below - the stale badge showed as an empty pill, and
+   .gl is one !important away from the same problem. Stated once here so
+   the property means what it says everywhere on the page. */
+[hidden]{display:none!important}
 .tag{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:3px;font-size:10.5px;font-weight:650;white-space:nowrap;border:1px solid}
 .t-good{color:var(--good-t);background:var(--good-b);border-color:var(--good-r)}
 .t-warn{color:var(--warn-t);background:var(--warn-b);border-color:var(--warn-r)}
@@ -274,14 +280,34 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
   <div class="view on" id="v-timing">
     <div class="lede">
       <h2>When to fix the charter</h2>
-      <p>Choose a decision date and the model returns the forecast it made
-        <em>at that moment</em> — fitted only on data before it, with a five-day
-        purge gap. Because the forecast is genuinely out-of-sample the outcome is
-        knowable, so it is shown beside the call rather than hidden.</p>
+      <p>The call for the days ahead is first, because that is the only one a
+        desk can act on. Below it the same model is replayed over history, where
+        the outcome is already known and the call can be marked.</p>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="cap">The days ahead &middot; nothing here has happened yet
+        <span class="tag t-bad" id="aheadStale" hidden style="margin-left:8px"></span></div>
+      <p class="note" id="aheadIntro" style="margin:0 0 10px"><span class="skel"></span></p>
+      <div class="plot" id="aheadPlot"><canvas id="aheadChart"></canvas></div>
+      <div class="scroll" id="aheadTable"><table>
+        <thead><tr><th>Ahead</th><th>Target date</th><th class="n">Expected move</th>
+          <th class="n">80% interval</th><th class="n">Strength of this call</th>
+          <th class="n">Direction at this horizon</th></tr></thead>
+        <tbody id="aheadBody"><tr><td colspan="6"><span class="skel"></span></td></tr></tbody>
+      </table></div>
+      <p class="note" id="aheadCaveat" style="margin:10px 0 0"></p>
     </div>
     <div class="split">
       <div class="card">
-        <div class="cap">Inputs</div>
+        <div class="cap">Replay a past decision &middot; the outcome is known</div>
+        <p class="note" style="margin:0 0 10px">Pick a date and the model returns
+          the forecast it made <em>at that moment</em> — fitted only on data
+          before it, with a five-day purge gap — and the outcome beside it.
+          History starts in <b>February 2018</b> although the panel begins in
+          2012: the earlier 1,313 days trained the first fold, so the model has
+          no out-of-sample call for them. Showing one would be the model marking
+          its own homework.</p>
         <div class="f">
           <label>Decision date <span id="dateRange" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink-3)"></span></label>
           <div class="datefield">
@@ -1049,6 +1075,130 @@ function fillRegimes(g) {
     note.innerHTML = t;
 }
 
+let aheadChart = null;
+
+// The forward curve. Deliberately has no "Actual" series: there is no
+// outcome yet, and drawing the same shape as the replay chart below
+// would invite the eye to look for one.
+async function loadAhead() {
+    const body = document.getElementById('aheadBody');
+    const intro = document.getElementById('aheadIntro');
+    const caveat = document.getElementById('aheadCaveat');
+    const stale = document.getElementById('aheadStale');
+    const show = on => {
+        // Collapse the plot and the table when there is nothing to put
+        // in them. Left in place they render as a tall empty box with a
+        // sentence above it, which reads as a broken card rather than a
+        // card explaining what to run.
+        const p = document.getElementById('aheadPlot');
+        const t = document.getElementById('aheadTable');
+        if (p) p.hidden = !on;
+        if (t) t.hidden = !on;
+    };
+    const stop = msg => {
+        intro.textContent = msg;
+        body.innerHTML = '<tr><td colspan="6">' + rkEsc(msg) + '</td></tr>';
+        caveat.textContent = '';
+        show(false);
+    };
+    try {
+        const resp = await fetchWithTimeout('/api/forecast', 30000);
+        if (!resp.ok) {
+            const e = await resp.json().catch(() => ({}));
+            stop(e.error || 'forward forecast unavailable');
+            return;
+        }
+        const f = await resp.json();
+        const hs = f.horizons || [];
+        if (!hs.length) { stop('no forward horizons were produced'); return; }
+        show(true);
+        const idx = f.capesize_index;
+
+        intro.innerHTML = 'From the close of <b>' + fmtDate(f.as_of) + '</b>, with '
+            + 'the Capesize index at <b>' + nloc(idx) + '</b>. Each horizon is a '
+            + 'separate model, validated on its own folds with its own purge gap. '
+            + 'The band is a ' + f.interval_pct + '% conformal interval, calibrated on '
+            + 'days the model never fitted. Target dates step over weekends but not '
+            + 'exchange holidays, so one may land a session late.';
+
+        // Age is normal at one day - the Baltic close for today has not
+        // published when the build runs - and a problem beyond that.
+        if (f.data_age_days >= 2) {
+            stale.hidden = false;
+            stale.textContent = f.data_age_days + ' days stale';
+        } else { stale.hidden = true; }
+
+        const lvl = p => +(idx * (1 + p / 100)).toFixed(0);
+        const labels = ['as of ' + fmtDate(f.as_of)]
+            .concat(hs.map(h => '+' + h.horizon_days + 'd'));
+        if (aheadChart) aheadChart.destroy();
+        aheadChart = new Chart(document.getElementById('aheadChart'), {
+            type: 'line',
+            data: { labels: labels, datasets: [
+                { label: 'Upper ' + f.interval_pct + '%',
+                  data: [idx].concat(hs.map(h => lvl(h.hi_pct))),
+                  borderColor: 'rgba(194,65,12,.30)',
+                  backgroundColor: 'rgba(194,65,12,.07)',
+                  borderWidth: 1, fill: '+1', pointRadius: 0, borderDash: [4, 4] },
+                { label: 'Lower ' + f.interval_pct + '%',
+                  data: [idx].concat(hs.map(h => lvl(h.lo_pct))),
+                  borderColor: 'rgba(194,65,12,.30)', borderWidth: 1,
+                  fill: false, pointRadius: 0, borderDash: [4, 4] },
+                { label: 'Forecast', data: [idx].concat(hs.map(h => lvl(h.expected_move_pct))),
+                  borderColor: RUST, borderWidth: 2.5, pointRadius: 3,
+                  pointBackgroundColor: RUST, pointBorderColor: '#fffefb',
+                  pointBorderWidth: 2 }
+            ]},
+            options: { responsive: true, maintainAspectRatio: false,
+                animation: { duration: 650 },
+                interaction: { intersect: false, mode: 'index' },
+                plugins: { legend: legendCfg, tooltip: { ...tipCfg,
+                    callbacks: { label: x => ' ' + x.dataset.label + ': '
+                        + Number(x.parsed.y).toLocaleString() } } },
+                scales: axes('Capesize index') }
+        });
+
+        body.innerHTML = hs.map(h => {
+            const v = h.validation || {};
+            // Strength is where this call sits among every call the model
+            // has made. It is shown for every row because a positive
+            // number from a weak signal must not read like conviction.
+            const weak = !h.stronger_than_usual;
+            return '<tr><td>' + h.horizon_days + ' trading day'
+                + (h.horizon_days === 1 ? '' : 's') + '</td>'
+                + '<td>' + fmtDate(h.target_date) + '</td>'
+                + '<td class="n" style="font-weight:700">' + pct(h.expected_move_pct) + '</td>'
+                + '<td class="n">' + pct(h.lo_pct) + ' to ' + pct(h.hi_pct) + '</td>'
+                + '<td class="n"><span class="tag ' + (weak ? 't-mute' : 't-good') + '">'
+                + nfix(h.strength_pct, 0) + '% &middot; ' + (weak ? 'weaker than usual'
+                    : 'stronger than usual') + '</span></td>'
+                + '<td class="n">' + nfix(v.direction_pct, 1) + '% <span style="opacity:.6">vs '
+                + nfix(v.base_rate_pct, 1) + '% base</span></td></tr>'; }).join('');
+
+        const cy = f.current_year;
+        let t = '';
+        const strongest = Math.max.apply(null, hs.map(h => h.strength_pct || 0));
+        if (strongest < 50) {
+            t += '<b>Every horizon above is a weaker signal than this model '
+                + 'usually produces</b> (the strongest is at the '
+                + nfix(strongest, 0) + 'th percentile of its own history). That is '
+                + 'a reason to weight it lightly, and it is said here rather than '
+                + 'left for the reader to work out. ';
+        }
+        if (cy) {
+            const losing = cy.skill_pct < 0 || cy.direction_pct <= cy.base_rate_pct;
+            t += 'In ' + cy.period + ' so far the model has called direction '
+                + nfix(cy.direction_pct, 1) + '% against a ' + nfix(cy.base_rate_pct, 1)
+                + '% base rate, with ' + pct(cy.skill_pct) + ' RMSE skill'
+                + (losing ? ' — <b>a year it is not beating</b>. The forecast above is '
+                    + 'published with that beside it, not in spite of it.' : '.');
+        }
+        caveat.innerHTML = t;
+    } catch (e) {
+        stop('forward forecast unavailable');
+    }
+}
+
 async function fillDates(dr) {
     const range = document.getElementById('dateRange');
     try {
@@ -1323,8 +1473,14 @@ async function loadCongestion() {
     }
     const live = d.snapshots.filter(s => !s.error);
     const dated = live.find(s => s.as_of);
+    // Name the feed. This badge dates the PortWatch arrivals, which
+    // publish WEEKLY, while the forecast card dates the Baltic close,
+    // which publishes daily - so the two legitimately differ by days.
+    // Labelled "live" with a bare date, the header looked like it was
+    // contradicting the forecast rather than describing another source.
     document.getElementById('congAsOf').textContent =
-        dated ? 'live · week to ' + fmtDate(dated.as_of) : 'no port data';
+        dated ? 'port calls · week to ' + fmtDate(dated.as_of)
+              : 'no port data';
 
     const card = s => {
         // Two figures. Throughput is everything crossing the berth in both
@@ -1797,6 +1953,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
     showView(location.hash.slice(1) || 'timing');
 
+    loadAhead();
     await loadMetrics();
     loadCongestion();
     loadBallast();

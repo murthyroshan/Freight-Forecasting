@@ -1,0 +1,137 @@
+{
+  "as_of": "2026-09-04",
+  "generated": "2026-09-05T01:47:17.410410+00:00",
+  "data_age_days": 1,
+  "capesize_index": 6427.0,
+  "model": "ridge",
+  "interval_pct": 80,
+  "unit": "percent change in the Capesize index",
+  "calendar_note": "target dates step over weekends but not exchange holidays, so a date may land one session late",
+  "basis": "fitted only on days before the forecast is made; the interval is conformal, calibrated on a block the model never fitted and purged from it by the horizon",
+  "current_year": {
+    "period": "2026",
+    "n": 166,
+    "direction_pct": 56.024096385542165,
+    "skill_pct": -18.940274790346034,
+    "volatility_pct": 12.12312276213633,
+    "base_rate_pct": 62.048192771084345,
+    "n_strong": 70,
+    "strong_direction_pct": 55.714285714285715
+  },
+  "horizons": [
+    {
+      "horizon_days": 1,
+      "target_date": "2026-09-07",
+      "expected_move_pct": 1.9171990289556184,
+      "lo_pct": -2.7482277499297214,
+      "hi_pct": 6.806438768011724,
+      "direction": "up",
+      "strength_pct": 38.917004048582996,
+      "stronger_than_usual": false,
+      "n_fitted": 2798,
+      "n_calibrated": 494,
+      "validation": {
+        "n_scored": 1976,
+        "n_effective": 1976,
+        "direction_pct": 70.69838056680162,
+        "base_rate_pct": 52.22672064777327,
+        "skill_pct": 7.337051749059997
+      }
+    },
+    {
+      "horizon_days": 2,
+      "target_date": "2026-09-08",
+      "expected_move_pct": 3.0222254776093305,
+      "lo_pct": -5.685735154172034,
+      "hi_pct": 12.534185149075828,
+      "direction": "up",
+      "strength_pct": 41.18541033434651,
+      "stronger_than_usual": false,
+      "n_fitted": 2794,
+      "n_calibrated": 494,
+      "validation": {
+        "n_scored": 1974,
+        "n_effective": 987,
+        "direction_pct": 66.10942249240122,
+        "base_rate_pct": 51.671732522796354,
+        "skill_pct": 5.640457465628435
+      }
+    },
+    {
+      "horizon_days": 3,
+      "target_date": "2026-09-09",
+      "expected_move_pct": 3.6976386648025272,
+      "lo_pct": -8.213998089915775,
+      "hi_pct": 17.155122141500833,
+      "direction": "up",
+      "strength_pct": 37.354282818043586,
+      "stronger_than_usual": false,
+      "n_fitted": 2791,
+      "n_calibrated": 494,
+      "validation": {
+        "n_scored": 1973,
+        "n_effective": 657,
+        "direction_pct": 64.11556006082108,
+        "base_rate_pct": 50.58286872782565,
+        "skill_pct": 7.099617885705756
+      }
+    },
+    {
+      "horizon_days": 5,
+      "target_date": "2026-09-11",
+      "expected_move_pct": 4.7607763943871895,
+      "lo_pct": -12.54492392223182,
+      "hi_pct": 25.490946471712974,
+      "direction": "up",
+      "strength_pct": 33.23186199898529,
+      "stronger_than_usual": false,
+      "n_fitted": 2786,
+      "n_calibrated": 493,
+      "validation": {
+        "n_scored": 1971,
+        "n_effective": 394,
+        "direction_pct": 61.694571283612376,
+        "base_rate_pct": 51.04008117706748,
+        "skill_pct": 5.60214963646537
+      }
+    },
+    {
+      "horizon_days": 7,
+      "target_date": "2026-09-15",
+      "expected_move_pct": 5.187051405496557,
+      "lo_pct": -16.214705300663866,
+      "hi_pct": 32.05558115045031,
+      "direction": "up",
+      "strength_pct": 27.947154471544717,
+      "stronger_than_usual": false,
+      "n_fitted": 2781,
+      "n_calibrated": 492,
+      "validation": {
+        "n_scored": 1968,
+        "n_effective": 281,
+        "direction_pct": 60.82317073170732,
+        "base_rate_pct": 50.81300813008131,
+        "skill_pct": 4.141141123258796
+      }
+    },
+    {
+      "horizon_days": 10,
+      "target_date": "2026-09-18",
+      "expected_move_pct": 6.360293866596334,
+      "lo_pct": -18.92487813406173,
+      "hi_pct": 39.53123783266743,
+      "direction": "up",
+      "strength_pct": 24.262461851475077,
+      "stronger_than_usual": false,
+      "n_fitted": 2774,
+      "n_calibrated": 492,
+      "validation": {
+        "n_scored": 1966,
+        "n_effective": 196,
+        "direction_pct": 61.190233977619535,
+        "base_rate_pct": 51.11902339776195,
+        "skill_pct": 3.9211665281973063
+      }
+    }
+  ]
+}
