@@ -75,11 +75,16 @@ TIMEOUT = 12
 # TIMEOUT to this.
 CONNECT_TIMEOUT = 4
 
-# What a caller can actually wait for now, in either condition. The
-# budget still has to sit under the browser's own abort, which sits
-# under the one tests/test_app.py uses: 12s server, 75s browser, 90s
-# test. tests/test_risk.py asserts it.
-WORST_CASE = TIMEOUT
+# What a caller can actually wait for. It is the SUM, not the larger
+# half: requests reads a 2-tuple as (connect, read), so the slowest way
+# to fail is a connect that just succeeds followed by a read that times
+# out - four seconds and then twelve. Calling it TIMEOUT understated the
+# real ceiling by a third, and a later refactor that tightened the
+# browser abort to match would have killed requests that were still
+# answering. The budget still has to sit under the browser's own abort,
+# which sits under the one tests/test_app.py uses: 16s server, 75s
+# browser, 90s test. tests/test_risk.py asserts it.
+WORST_CASE = CONNECT_TIMEOUT + TIMEOUT
 
 SEVERITY_ORDER = {'critical': 0, 'warning': 1, 'watch': 2, 'clear': 3}
 

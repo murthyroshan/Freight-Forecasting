@@ -45,7 +45,8 @@ except ImportError:                     # optional; env vars still work
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src import (paths, ports, congestion, risk, optimise,  # noqa: E402
                  ballast,
-                 booking, seasonal)
+                 booking, seasonal,
+                 assistant)
 
 app = Flask(__name__)
 
@@ -165,6 +166,13 @@ if OOS_LIC is not None:
     OOS_LIC.index = pd.to_datetime(OOS_LIC.index)
 MET_LIC = _load_json(MET_LIC_PATH)
 
+# One gate, because three places ask the same question. licensed_model.py
+# writes the returns before the metrics, so a run interrupted between the
+# two leaves the parquet on disk with nothing to score it by. Offering a
+# date the replay cannot answer is worse than not offering it.
+LIC_READY = (OOS_LIC is not None and len(OOS_LIC) > 0
+             and MET_LIC is not None)
+
 
 def _replay_source(when):
     """Which model answers for this date, and what it scored.
@@ -174,8 +182,7 @@ def _replay_source(when):
     per date by whichever scored better would be picking the answer
     after seeing it.
     """
-    if (OOS_LIC is not None and MET_LIC is not None
-            and when <= OOS_LIC.index.max()):
+    if LIC_READY and when <= OOS_LIC.index.max():
         r = MET_LIC['models']['ridge']
         return OOS_LIC, {
             'name': 'licensed Baltic years',
@@ -291,6 +298,53 @@ def api_metrics():
     if METRICS is None:
         return jsonify({'error': MISSING % METRICS_PATH}), 503
     return jsonify(_json_safe(METRICS))
+
+
+@app.route('/api/ask', methods=['POST'])
+def api_ask():
+    """The assistant. Grounded in this project's artefacts, nothing else.
+
+    There is no language model behind this. The question is matched
+    against a registry of skills and each computes its answer from the
+    same files the dashboard reads, so a reply cannot contain a number
+    that was not just calculated - and a question outside the registry
+    gets a refusal rather than a guess.
+    """
+    data, err = _body()
+    if err:
+        return err
+    # A MISSING key is a malformed request; an explicitly empty
+    # string is a legitimate no-op. Collapsing the two with 'or'
+    # made a body of {} look like someone who pressed send on an
+    # empty box.
+    if 'question' not in data and 'q' not in data:
+        return jsonify({'error': "'question' is required"}), 400
+    q = data.get('question', data.get('q'))
+    if q is None:
+        q = ''
+    if not isinstance(q, str):
+        return jsonify({'error': "'question' must be text"}), 400
+    if len(q) > 500:
+        return jsonify({'error': 'question is too long (500 characters max)'}), 400
+    # The context the client got back last turn, handed straight back.
+    # It holds nothing but the last skill and the entities named in it,
+    # so a follow-up like "and Haldia?" can mean what it obviously means.
+    # It lives on the client rather than in a session on the server: no
+    # state to expire, and two tabs cannot tread on each other.
+    ctx = data.get('context')
+    if not isinstance(ctx, dict) or len(ctx) > 24:
+        ctx = None
+    try:
+        out = assistant.answer(q, ctx)
+    except Exception as exc:
+        # A skill that fails must not take the panel down with it.
+        return jsonify({'answer': 'That question reached a check that failed '
+                                  'to run: %s. The other topics still work.'
+                                  % str(exc)[:160],
+                        'table': None, 'source': None, 'follow_up': [],
+                        'action': None, 'confidence': 0.0,
+                        'matched': None, 'context': ctx}), 200
+    return jsonify(_json_safe(out))
 
 
 @app.route('/api/seasonal')
@@ -686,7 +740,7 @@ def api_dates():
         return jsonify({'error': MISSING % OOS_PATH}), 503
     lo = OOS.index.min()
     n = len(OOS)
-    if OOS_LIC is not None and len(OOS_LIC):
+    if LIC_READY:
         # The picker spans both models, because the replay does.
         lo = min(lo, OOS_LIC.index.min())
         n += int((OOS_LIC.index < OOS.index.min()).sum())
@@ -743,8 +797,7 @@ def api_predict():
     if src is None or not len(src):
         return jsonify({'error': MISSING % OOS_PATH}), 503
     lo_all = min(OOS.index.min(),
-                 OOS_LIC.index.min() if OOS_LIC is not None and len(OOS_LIC)
-                 else OOS.index.min())
+                 OOS_LIC.index.min() if LIC_READY else OOS.index.min())
     if when < lo_all or when > OOS.index.max():
         return jsonify({'error':
                         'No out-of-sample forecast for %s. Available range '

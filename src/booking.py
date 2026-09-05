@@ -32,7 +32,8 @@ repository has no sourced rate for the East Coast lane and asserting
 one would put a fabricated number at the front of the pitch, so the
 multiplication is done with figures the user supplies and the
 provenance of each is stated. The percentage being multiplied is the
-one src/procurement.py measured over 395 independent fixtures.
+one src/procurement.py measured, over as many independent fixtures
+as that file reports.
 
 Run:  python -m src.booking
 """
@@ -62,7 +63,11 @@ def usd_inr(default=None):
     of it.
     """
     try:
-        d = bp.load('usdinr').dropna()
+        # subset= matters: the panel carries a volume column beside the
+        # close, and Yahoo leaves it NaN on some FX days. A bare dropna()
+        # would throw away a perfectly good rate for a missing volume and
+        # quietly date every rupee figure on the page.
+        d = bp.load('usdinr').dropna(subset=['usdinr'])
         return float(d['usdinr'].iloc[-1]), str(
             pd.to_datetime(d['date'].iloc[-1]).date())
     except Exception:
@@ -188,6 +193,7 @@ def build(parcel_t=None, annual_t=None, rate_usd_per_t=None):
     if os.path.exists(ppath):
         with open(ppath, encoding='utf-8') as fh:
             proc = json.load(fh)
+        cal['n_fixtures'] = proc['n_fixtures']
         cal['saved_pct'] = proc['model_policy']['saved_pct']
         cal['saved_p_value'] = proc['p_vs_zero']
         cal['lose_rate_pct'] = proc['lose_rate_pct']
@@ -245,7 +251,8 @@ if __name__ == '__main__':
               % (im['saved_usd_per_t'], format(int(im['annual_usd']), ','),
                  im['annual_crore']))
         print('')
-        print('  The percentage is measured over 395 independent fixtures')
+        print('  The percentage is measured over %s independent fixtures'
+              % format(int(c['n_fixtures']), ','))
         print('  (p=%.3f). It loses on %.0f%% of the weeks it acts, and it is'
               % (c['saved_p_value'], c['lose_rate_pct']))
         print('  %s distinguishable from a momentum rule on money.'

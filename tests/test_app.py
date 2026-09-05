@@ -794,6 +794,7 @@ def _main():
           % ('' if not ext else ': ' + ', '.join(sorted({
               u.split('/')[2] for u in ext}))), not ext, ext[:3])
     for want in ('/static/vendor/chart.umd.min.js',
+                 '/static/vendor/three.min.js',
                  '/static/vendor/fonts/fonts.css'):
         check('%s is referenced locally' % want, want in html)
 
@@ -801,6 +802,13 @@ def _main():
     vendor = os.path.join(root, 'static', 'vendor')
     check('the vendored chart library is on disk',
           os.path.exists(os.path.join(vendor, 'chart.umd.min.js')))
+    three = os.path.join(vendor, 'three.min.js')
+    check('the vendored 3D library is on disk', os.path.exists(three))
+    if os.path.exists(three):
+        # A truncated download still 200s and still parses far enough to
+        # define THREE, then fails on whichever class it never reached.
+        check('and it is a whole file, not a truncated download',
+              os.path.getsize(three) > 400_000, os.path.getsize(three))
     css_path = os.path.join(vendor, 'fonts', 'fonts.css')
     check('and the vendored font stylesheet is too', os.path.exists(css_path))
     if os.path.exists(css_path):
@@ -823,6 +831,7 @@ def _main():
               len(refs) >= 3, refs)
 
     for u in ('/static/vendor/chart.umd.min.js',
+              '/static/vendor/three.min.js',
               '/static/vendor/fonts/fonts.css'):
         try:
             rr = requests.get(BASE + u, timeout=10)
@@ -831,6 +840,51 @@ def _main():
             ok, detail = False, str(e)[:60]
         check('the server serves %s' % u, ok, detail)
 
+
+    print('\n[26b] the vessel is WebGL, gated, and cannot take the page down')
+
+    check('the stage is a canvas', 'id="rigCanvas"' in html)
+    # The hull used to be 26 stacked clip-path planes. It orbited the
+    # whole stack on the compositor and was the reason the page stalled
+    # on modest hardware; nothing should bring it back.
+    check('and not the stacked-plane hull it replaced',
+          'class="wlp"' not in html and '--cp:polygon' not in html)
+
+    check('three is loaded before the script that uses it',
+          '/static/vendor/three.min.js' in html
+          and html.index('/static/vendor/three.min.js')
+              < html.index('function initRig'))
+
+    # Every one of these is decoration. If a browser has no WebGL, the
+    # constructor throws - and before this guard that throw happened
+    # inside the boot sequence and killed every init after it, leaving
+    # a page of em-dashes. It is the one failure that must not cascade.
+    boot = html[html.index('[initShip, initRig'):]
+    boot = boot[:boot.index('}')+400]
+    check('a failing init is caught rather than cascading',
+          'try {' in boot and 'catch' in boot)
+    check('and it says which one it skipped',
+          'skipped' in boot)
+
+    check('the render loop stops when the canvas leaves the screen',
+          'IntersectionObserver' in html and 'onScreen' in html)
+    check('and when the tab is hidden',
+          "addEventListener('visibilitychange', gate)" in html)
+    # Two gates that can both change at once. Without an idempotent
+    # start() this doubles the render loop on every tab switch.
+    check('starting twice cannot leave two loops running',
+          'if (!live || running) return;' in html)
+    check('a lost GL context fails quietly rather than throwing',
+          "'webglcontextlost'" in html)
+    check('one frame is drawn even if the loop never starts',
+          'renderer.render(scene, cam);\n    start();' in html)
+    check('the motion respects prefers-reduced-motion',
+          'prefers-reduced-motion' in html and 'reduce' in html)
+
+    # The part-load figure the panel quotes is the one ports.py computes
+    # from TPC, not a number typed into the template.
+    check('the vessel quotes the real part-load figure',
+          'FITS_PARADIP = 152320' in html)
 
     print('\n[27] dates read the same way everywhere on the page')
     # A native <input type="date"> renders in the BROWSER's locale, not
@@ -1226,6 +1280,71 @@ def _main():
           'never averaged' in html or 'no combined figure' in html)
     check('each replayed call is labelled with the model that made it',
           'Answered by' in html and 'r.source' in html)
+
+
+    print('\n[40] the assistant answers, refuses, and never 500s')
+    def ask(payload):
+        try:
+            rr = requests.post(BASE + '/api/ask', json=payload, timeout=60)
+            return rr.status_code, (rr.json() if rr.content else {})
+        except Exception as exc:
+            return 0, {'error': str(exc)[:60]}
+
+    code, r = ask({'question': 'how accurate is this model'})
+    check('a good question answers 200', code == 200, code)
+    check('and is attributed to a skill', bool(r.get('matched')), r.get('matched'))
+    check('and cites where it came from', bool(r.get('source')), r.get('source'))
+    check('and offers follow-ups', len(r.get('follow_up') or []) >= 1)
+
+    code, r = ask({'question': 'what is the capital of france'})
+    check('an off-topic question still answers 200, not an error', code == 200,
+          code)
+    check('but is matched to nothing', r.get('matched') is None, r.get('matched'))
+    check('and its confidence is zero', r.get('confidence') == 0.0)
+    check('and it contains no digits - a refusal with a number in it is a '
+          'guess', not re.search(r'\d', r.get('answer', '')),
+          r.get('answer', '')[:60])
+
+    for bad, why, want in (({}, 'no question', 400),
+                           ({'question': 123}, 'a non-text question', 400),
+                           ({'question': 'x' * 900}, 'an over-long question',
+                            400),
+                           ({'question': ''}, 'an empty question', 200)):
+        code, r = ask(bad)
+        check('%s -> %d' % (why, want), code == want, (code, r.get('error')))
+
+    # The panel echoes the question back into the log, so a question that
+    # looks like markup must not arrive as markup.
+    code, r = ask({'question': '<img src=x onerror=alert(1)> forecast'})
+    check('a question containing markup is handled, not executed',
+          code == 200 and isinstance(r.get('answer'), str), code)
+
+    code, r = ask({'question': 'which vessel for 150,000 tonnes'})
+    check('a comma in a tonnage survives the round trip',
+          code == 200 and '150,000' in r.get('answer', ''),
+          r.get('answer', '')[:80])
+
+
+    print('\n[41] the 3D rig quotes the model, not an approximation')
+    # The rig says how many tonnes a Capesize can actually land at
+    # Paradip. A first version interpolated linearly between light and
+    # laden draft and got 140,546 - immersion goes by TPC over the
+    # waterplane, not by a straight line, and the real answer is
+    # 152,320. A number on the landing page that no function here
+    # computes is exactly what this project refuses to ship.
+    from src import ports as _ports
+    want = int(round(_ports.max_cargo('Capesize', 'Paradip')[0]))
+    m_fits = re.search(r'FITS_PARADIP = (' + chr(92) + 'd+)', html)
+    check('the rig declares a part-load constant', bool(m_fits))
+    if m_fits:
+        got = int(m_fits.group(1))
+        check('and it equals ports.max_cargo (%s vs %s)'
+              % (format(got, ','), format(want, ',')),
+              abs(got - want) <= 1, (got, want))
+        check('it is not the linear approximation (140,546)',
+              got != 140546, got)
+    check('the rig names the berth the figure belongs to',
+          'max_cargo(' in html and 'Paradip' in html)
 
 
     if FAIL:

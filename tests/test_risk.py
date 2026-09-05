@@ -360,9 +360,9 @@ def _run(real_cache_write):
     # before anything rendered. Every row degraded correctly at the end
     # of that wait, which is exactly why no assertion here caught it:
     # the payload was right and only the latency was wrong.
-    check('the worst case is one timeout, not one per site',
-          risk.WORST_CASE == risk.TIMEOUT,
-          (risk.WORST_CASE, risk.TIMEOUT))
+    check('the worst case is one port, not one per site',
+          risk.WORST_CASE == risk.CONNECT_TIMEOUT + risk.TIMEOUT,
+          (risk.WORST_CASE, risk.CONNECT_TIMEOUT + risk.TIMEOUT))
     check('worst case %ds stays under 90s' % risk.WORST_CASE,
           risk.WORST_CASE < 90, risk.WORST_CASE)
     check('and it no longer scales with the number of ports (%d sites)'
@@ -809,7 +809,10 @@ def _run(real_cache_write):
     # If these ever invert, a slow but working backend looks like a
     # failure to whichever layer gives up first.
     worst = risk.WORST_CASE
-    check('server worst case is %ds' % worst, worst == 12, worst)
+    # Derived, not pinned: asserting the literal 12 is what let the
+    # constant drift away from the (connect, read) pair it describes.
+    check('server worst case is %ds' % worst,
+          worst == risk.CONNECT_TIMEOUT + risk.TIMEOUT, worst)
     # This used to end `check('...', 75 < 90)` - two literals compared to
     # each other, which no code change could ever break. Read the other
     # two rungs from the files that actually set them.
