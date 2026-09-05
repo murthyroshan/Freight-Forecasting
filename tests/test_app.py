@@ -809,6 +809,107 @@ def _main():
         check('the server serves %s' % u, ok, detail)
 
 
+    print('\n[27] dates read the same way everywhere on the page')
+    # A native <input type="date"> renders in the BROWSER's locale, not
+    # the page's - Chrome ignores lang= for it - so on a machine set to
+    # en-US the field showed 08/27/2026 while the label beside it, the
+    # range above it and every date in every table read 27/08/2026. The
+    # demo machine's locale is not something this project controls, so
+    # the field is plain text with an explicit parser.
+    check('the decision-date field is not a locale-formatted native one',
+          'type="text" id="date"' in html
+          and 'type="date" id="date"' not in html)
+    # Not a placeholder attribute: this repository forbids that word
+    # outright - it exists to stop the page passing placeholder data
+    # off as measured - and a placeholder also vanishes the moment
+    # someone types, which is when a person checking their own
+    # typing most wants to see the format.
+    check('the format is stated where it stays visible, not in a vanishing hint',
+          'dd/mm/yyyy' in html and 'placeholder' not in html)
+    check('the native picker is kept behind a button, so the calendar '
+          'is not lost', 'id="datePicker"' in html and 'id="dateCal"' in html)
+    check('and that picker is hidden without display:none, which '
+          'showPicker() refuses',
+          'showPicker' in html
+          and 'position: absolute; width: 1px; height: 1px; opacity: 0;' in html)
+    check('a half-typed date does not fire a request per keystroke',
+          "if (raw !== '' && dv === null) return;" in html)
+
+    # A page with no doctype renders in QUIRKS mode, where the box model
+    # differs from standards mode. It looked right only because the CSS
+    # happened not to depend on the difference.
+    check('the page declares a doctype, so it is not in quirks mode',
+          html.lstrip().lower().startswith('<!doctype html>'), html[:40])
+    check('and declares its language', 'lang="en-GB"' in html)
+
+    # The parser is the part that can silently do the wrong thing:
+    # new Date('2026-02-31') is 3 March, so an impossible date would be
+    # accepted and quietly forecast for a different day. Run it for
+    # real where a JS engine is available rather than grepping for it.
+    import shutil as _sh4
+    import subprocess as _sp
+    import tempfile as _tf3
+    node = _sh4.which('node')
+    if not node:
+        print('       (node not installed - parser behaviour not executed)')
+    else:
+        m_ = re.search(r'const toISO = v => \{.*?' + chr(92) + 'n\};', html,
+                       re.S)
+        check('toISO() is present to be tested', bool(m_))
+        if m_:
+            cases = [('27/08/2026', '2026-08-27'), ('1/1/2020', '2020-01-01'),
+                     ('29/02/2024', '2024-02-29'), ('31/12/2026', '2026-12-31'),
+                     ('31/02/2026', None), ('29/02/2025', None),
+                     ('32/01/2026', None), ('27/13/2026', None),
+                     ('08/27/2026', None), ('2026-08-27', None),
+                     ('27/08/26', None), ('', None), ('abc', None)]
+            js = m_.group(0) + chr(92) + 'n' + 'const C=' + json.dumps(
+                [[a, b] for a, b in cases]) + ';' + chr(92) + 'n' + (
+                'let bad=[];for(const [i,w] of C){const g=toISO(i);'
+                'if((g===null?null:g)!==w) bad.push([i,g,w]);}'
+                'console.log(JSON.stringify(bad));')
+            tmpjs = os.path.join(_tf3.mkdtemp(), 't.js')
+            io.open(tmpjs, 'w', encoding='utf-8').write(js)
+            try:
+                out = _sp.run([node, tmpjs], capture_output=True, text=True,
+                              timeout=60)
+                wrong = json.loads(out.stdout.strip() or '[]')
+            except Exception as e:
+                wrong = [['could not run node', str(e)[:60], '']]
+            check('the date parser handles all %d cases, leap years and '
+                  'impossible dates included' % len(cases), not wrong, wrong)
+            _sh4.rmtree(os.path.dirname(tmpjs), ignore_errors=True)
+
+
+    print('\n[28] the cheapest-fleet card answers without being asked')
+    # It used to render as a form over an empty box until someone found
+    # the Solve button, which reads as unfinished rather than as
+    # waiting - every other panel on the page fills itself.
+    check('it solves once on load', 'solveFleet();' in html)
+    check('and follows the figures as they are edited',
+          'costBox.addEventListener' in html and 'solveSoon' in html)
+    check('the edit handler is debounced, so typing a seven-digit cost '
+          'does not fire seven solves',
+          'debounce(solveFleet' in html and 'function debounce' in html)
+    check('it is delegated on the container, which buildCostInputs() '
+          'replaces wholesale',
+          "getElementById('voyageCosts')" in html
+          and 'costBox.addEventListener' in html)
+    check('the Solve button still works for an explicit run',
+          "sf.addEventListener('click', solveFleet)" in html)
+    # The guard has to match the server. src/optimise.py refuses unless
+    # EVERY class is priced; a guard that accepted a subset would post a
+    # request whose only possible answer is a 400, on every keystroke.
+    check('a blank cost box is reported locally, naming the classes',
+          'A voyage cost is needed for every' in html
+          and "!(v.name in voyage)" in html)
+    check('and it does not claim a blank box means "cannot charter", '
+          'which is not what the optimiser does',
+          'cannot charter' not in html)
+    check('the unpriced-empty-leg caveat is still surfaced',
+          'ballast_caveat' in html)
+
+
     if FAIL:
         print('  %d CHECK(S) FAILED:' % len(FAIL))
         for f in FAIL:

@@ -83,6 +83,13 @@ WORST_CASE = TIMEOUT
 
 SEVERITY_ORDER = {'critical': 0, 'warning': 1, 'watch': 2, 'clear': 3}
 
+# Spelled out rather than taken from the locale. "month 09" is correct
+# and unreadable, and a locale-derived name would change with whichever
+# machine the demo happens to run on.
+MONTH_NAME = ('January', 'February', 'March', 'April', 'May', 'June',
+              'July', 'August', 'September', 'October', 'November',
+              'December')
+
 
 def _dmy(d):
     """Dates inside a sentence are DD/MM/YYYY. The as_of fields stay ISO
@@ -453,16 +460,16 @@ def seasonal_warning(port, month=None):
     v = prof.get(m)
     if v is None:
         return _unavailable(port, 'Seasonal profile',
-                            'no profile for month %02d' % m)
+                            'no profile for %s' % MONTH_NAME[m - 1])
     sev = 'watch' if v <= 92 else 'clear'
     direction = 'below' if v < 100 else 'above'
     return {
         'kind': 'seasonal', 'port': port, 'severity': sev, 'measured': False,
-        'as_of': 'month %02d' % m,
+        'as_of': MONTH_NAME[m - 1],
         'title': 'Seasonally %s normal' % direction,
-        'detail': ('Arrivals in month %02d average %.0f against this port\'s '
+        'detail': ('Arrivals in %s average %.0f against this port\'s '
                    'own annual 100. Every Indian port dips September to '
-                   'December.' % (m, v)),
+                   'December.' % (MONTH_NAME[m - 1], v)),
         'basis': ('pattern is real and holds at all five ports, but its CAUSE '
                   'is unknown - we tested cyclone season against Open-Meteo '
                   'wind and the dip months are the calmest of the year'),
