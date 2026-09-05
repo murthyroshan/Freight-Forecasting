@@ -658,6 +658,13 @@ body::after{
   letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); }
 .mast-f .v{ font-family:var(--fd); font-size:25px; font-weight:600;
   letter-spacing:-.01em; line-height:1.2; }
+.mast-note{ margin:14px 0 0; font-size:12px; line-height:1.5;
+  color:var(--ink-3); max-width:44ch; }
+.mast-note a{ color:var(--ink-2); text-decoration:underline;
+  text-underline-offset:2px; text-decoration-thickness:1px; }
+.mast-note a:hover{ color:var(--rust); }
+.mast-note a:focus-visible{ outline:2px solid var(--focus);
+  outline-offset:2px; border-radius:2px; }
 /* height:100% on an SVG inside an auto-sized grid row is circular -
    the row grows to fit the SVG, the SVG grows to fit the row - and the
    copy beside it gets pushed to the bottom of a very tall box. Let the
@@ -891,7 +898,7 @@ body::after{
         <h2>Coking coal moves by sea.<br>The <em>week you fix</em> decides the bill.</h2>
         <p>A Capesize into an East Coast berth is a seven-figure decision taken on a
           rate that moves daily. This forecasts that rate, prices the fleet that
-          carries it, and shows its own record &mdash; including the years it was wrong.</p>
+          carries it, and scores itself against what actually happened.</p>
         <div class="mast-row">
           <div class="mast-f"><div class="k">Capesize today</div>
             <div class="v" id="heroIdx">&mdash;</div></div>
@@ -900,6 +907,9 @@ body::after{
           <div class="mast-f"><div class="k">Direction, out of sample</div>
             <div class="v" id="heroAcc">&mdash;</div></div>
         </div>
+        <p class="mast-note">Every call above was made before its outcome was
+          known. <a href="#proof">The full record</a>
+          &mdash; winning years and losing ones.</p>
       </div>
       <div class="mast-r stage" id="stage">
         <svg viewBox="0 0 460 300" class="stage-in" id="stageIn" role="img"
@@ -937,11 +947,17 @@ body::after{
           </g>
           <g font-family="var(--fm)" font-size="8.5" fill="var(--ink-3)"
              letter-spacing="1.4">
+            <!-- The five discharge berths the model actually scores,
+                 north to south. This previously named Gangavaram, which
+                 has no PortWatch feed and is scored nowhere in the
+                 project, while Gopalpur - which is one of the five - was
+                 missing; and Dhamra, which lies north of Paradip, was
+                 drawn south of it. -->
             <text x="150" y="62">HALDIA</text>
-            <text x="142" y="128">PARADIP</text>
-            <text x="138" y="166">DHAMRA</text>
-            <text x="138" y="204">VISAKHAPATNAM</text>
-            <text x="122" y="242">GANGAVARAM</text>
+            <text x="142" y="128">DHAMRA</text>
+            <text x="138" y="166">PARADIP</text>
+            <text x="138" y="204">GOPALPUR</text>
+            <text x="122" y="242">VISAKHAPATNAM</text>
           </g>
           <!-- A Capesize you can load. Click it. -->
           <g class="ship" id="ship" tabindex="0" role="button"
@@ -1732,7 +1748,7 @@ async function loadMetrics() {
         // from /api/metrics - and a non-OK response hit `if (x.ok)`
         // with no else, leaving a skeleton pulsing for the life of the
         // tab with nothing to explain it.
-        await fillProcurement(pr);
+        await fillProcurement(pr, m);
         fillRegimes(m.models.regimes);
         await fillDates(dr);
         await fillControl(cr, best);
@@ -1783,7 +1799,24 @@ function fillConfidence(c) {
         + c.tiers.length + ' tiers.';
 }
 
-async function fillProcurement(pr) {
+function momentumTie(m) {
+    const mods = (m && m.models) || {};
+    const mine = mods[m && m.best_model] || {};
+    const naive = mods.momentum || {};
+    if (mine.direction_pct == null || naive.direction_pct == null) return '.';
+    const gap = mine.direction_pct - naive.direction_pct;
+    // Under a quarter of a point over ~394 independent windows is not a
+    // difference anyone should lean on, so it is named as a tie.
+    const level = Math.abs(gap) < 0.25;
+    return ', and on direction the two are ' + (level ? 'level' : 'close')
+        + ' &mdash; <b>' + nfix(mine.direction_pct, 1) + '%</b> against <b>'
+        + nfix(naive.direction_pct, 1) + '%</b>. The model earns its place on '
+        + 'RMSE skill (<b>' + nfix(mine.skill_vs_zero_pct, 1) + '%</b> against <b>'
+        + nfix(naive.skill_vs_zero_pct, 1) + '%</b>): better-calibrated size, '
+        + 'not better direction.';
+}
+
+async function fillProcurement(pr, m) {
     const body = document.getElementById('procBody');
     const verdict = document.getElementById('procVerdict');
     const limits = document.getElementById('procLimits');
@@ -1824,8 +1857,7 @@ async function fillProcurement(pr) {
             + pct(r.control.saved_pct) + ', because the index rose across this period — so the '
             + 'saving is a forecast, not a drift being harvested.'
             + (tie ? ' <b>It is not distinguishable from the momentum rule on money</b> (p = '
-                + nfix(r.p_vs_momentum, 2) + '); the model earns its place on RMSE and '
-                + 'direction, and on this decision the two are a tie.' : '');
+                + nfix(r.p_vs_momentum, 2) + ')' + momentumTie(m) + '' : '');
 
         limits.innerHTML = 'It loses on <b>' + nfix(r.lose_rate_pct, 0) + '%</b> of the weeks '
             + 'it holds, worst single decision ' + pct(r.model_policy.worst_pct) + '. Holding '
@@ -2583,7 +2615,17 @@ async function loadMarquee() {
     const set = '<span class="tick-set">' + items.join('') + '</span>';
     rail.innerHTML = set + set;
 
-    // Long content should not crawl; short content should not race.
+    tickSpeed();
+}
+
+// Long content should not crawl; short content should not race. This
+// has to be recomputed whenever the rail becomes visible again: the
+// ticker only rides the landing view, so a deep link straight to
+// another one measures a display:none rail as zero width and pins the
+// duration at the 28s floor - which then races when you come back.
+function tickSpeed() {
+    const rail = document.getElementById('tickRail');
+    if (!rail || !rail.scrollWidth) return;
     const w = rail.scrollWidth / 2;
     rail.style.animationDuration = Math.max(28, Math.round(w / 42)) + 's';
 }
@@ -3994,7 +4036,14 @@ function toggleTheme() {
     const go = () => applyTheme(next);
     if (document.startViewTransition
         && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        document.startViewTransition(go);
+        const vt = document.startViewTransition(go);
+        // A transition that gets aborted - a second flip before the
+        // first settles, or the tab going hidden mid-way - rejects
+        // these. The update callback has already run by then, so the
+        // theme is applied either way; all an uncaught rejection buys
+        // us is a red line in the console during a demo.
+        vt.ready.catch(() => {});
+        vt.finished.catch(() => {});
     } else {
         go();
     }
@@ -4003,6 +4052,18 @@ function toggleTheme() {
 function showView(name) {
     if (!VIEWS.includes(name)) name = 'timing';
     VIEWS.forEach(v => document.getElementById('v-'+v).classList.toggle('on', v === name));
+
+    // The ticker is a landing-page device. On the working views it is
+    // motion above content somebody is trying to read a number off, and
+    // it repeats figures those views already state properly.
+    const tick = document.getElementById('tick');
+    if (tick) {
+        const show = name === 'timing';
+        tick.hidden = !show;
+        // scrollWidth is 0 while it is hidden, so the speed can only be
+        // measured once it is back.
+        if (show) requestAnimationFrame(tickSpeed);
+    }
     document.querySelectorAll('nav button').forEach(b =>
         b.setAttribute('aria-current', String(b.dataset.v === name)));
     if (location.hash.slice(1) !== name) history.replaceState(null, '', '#'+name);
