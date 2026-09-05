@@ -829,6 +829,25 @@ def _run(real_cache_write):
           % client, client is not None and browser < client,
           (browser, client))
 
+    print('\n[28b] months are named, not numbered')
+    # "Arrivals in month 09" is correct and unreadable. The names are a
+    # constant rather than a locale lookup, so the panel does not change
+    # wording with the machine the demo runs on.
+    check('there are twelve of them', len(risk.MONTH_NAME) == 12)
+    check('and they are in order',
+          risk.MONTH_NAME[0] == 'January' and risk.MONTH_NAME[8] == 'September'
+          and risk.MONTH_NAME[11] == 'December')
+    for mth, name in ((9, 'September'), (1, 'January'), (12, 'December')):
+        w = risk.seasonal_warning('paradip', mth)
+        if w is None:
+            continue
+        check('month %d is reported as %s, not a number' % (mth, name),
+              w['as_of'] == name and name in w['detail'],
+              (w['as_of'], w['detail'][:50]))
+        check('and month %d prints no bare "month NN" anywhere' % mth,
+              'month %02d' % mth not in (w['as_of'] + w['detail']
+                                         + w['title']))
+
     print('\n' + '=' * 62)
     if FAIL:
         print('  %d FAILED:' % len(FAIL))

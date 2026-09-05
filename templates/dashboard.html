@@ -1,3 +1,5 @@
+<!DOCTYPE html>
+<html lang="en-GB">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SAIL · Freight Intelligence</title>
@@ -230,6 +232,28 @@ td.n,th.n{text-align:right;font-family:var(--fm)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--rule);font-size:11.5px;color:var(--ink-3);line-height:1.75}
 code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px;border-radius:2px}
+
+/* The native date input renders in the BROWSER's locale, not the page's
+   - Chrome ignores lang="en-GB" for this - so on a machine set to en-US
+   it showed 08/27/2026 while every other date on the page read
+   27/08/2026. The field is plain text in DD/MM/YYYY now, with the
+   native picker kept behind a button so the calendar is not lost. */
+.datefield { display: flex; gap: 6px; align-items: stretch; }
+.datefield > input[type="text"] { flex: 1 1 auto; min-width: 0; }
+.datefield > button {
+    flex: 0 0 auto; width: 38px; cursor: pointer; font-size: 15px;
+    background: var(--paper, #fff); color: var(--ink-2, #444);
+    border: 1px solid var(--rule, #d8d4cc); border-radius: 3px;
+    line-height: 1; padding: 0;
+}
+.datefield > button:hover { border-color: var(--ink-3, #888); }
+/* Kept in the layout - showPicker() refuses on a display:none input -
+   but out of sight and out of the tab order. */
+.datefield > input[type="date"] {
+    position: absolute; width: 1px; height: 1px; opacity: 0;
+    pointer-events: none; border: 0; padding: 0; margin: 0;
+}
+.datefield > input.bad { border-color: #b3261e; }
 </style>
 
 <div class="wrap">
@@ -260,7 +284,12 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
         <div class="cap">Inputs</div>
         <div class="f">
           <label>Decision date <span id="dateRange" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink-3)"></span></label>
-          <input type="date" id="date">
+          <div class="datefield">
+            <input type="text" id="date" inputmode="numeric" maxlength="10"
+                   autocomplete="off" spellcheck="false">
+            <button type="button" id="dateCal" aria-label="Open calendar">&#128197;</button>
+            <input type="date" id="datePicker" tabindex="-1" aria-hidden="true">
+          </div>
           <div class="hint" id="dateEcho"></div>
         </div>
         <div class="f"><label>Negotiated rate — $ per tonne</label>
@@ -548,6 +577,22 @@ const fin = v => (v === null || v === undefined || !isFinite(v)) ? null : v;
 
 // The API speaks ISO (sortable, unambiguous, correct on the wire).
 // Everything a person reads is DD/MM/YYYY.
+// DD/MM/YYYY -> YYYY-MM-DD, or null when it is not a real date.
+// The round-trip matters: new Date('2026-02-31') silently becomes
+// 3 March, so a typo would be accepted and quietly forecast for the
+// wrong day. Building the date back and comparing catches that.
+const toISO = v => {
+    const m = /^(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{4})$/.exec(
+        String(v || '').trim());
+    if (!m) return null;
+    const d = +m[1], mo = +m[2], y = +m[3];
+    const iso = y + '-' + String(mo).padStart(2, '0') + '-'
+        + String(d).padStart(2, '0');
+    const back = new Date(iso + 'T00:00:00Z');
+    return (back.getUTCFullYear() === y && back.getUTCMonth() + 1 === mo
+            && back.getUTCDate() === d) ? iso : null;
+};
+
 const fmtDate = s => {
     if (!s) return '';
     const p = String(s).slice(0, 10).split('-');
@@ -723,10 +768,21 @@ async function predict() {
         const raw = document.getElementById(id).value.trim();
         return raw === '' ? null : Number(raw);
     };
-    const dv = document.getElementById('date').value;
-    // The native picker renders in the browser's own locale, which may be
-    // MM/DD. Echo the selection back unambiguously underneath it.
-    document.getElementById('dateEcho').textContent = dv ? 'Reading as ' + fmtDate(dv) : '';
+    const dateEl = document.getElementById('date');
+    const raw = dateEl.value.trim();
+    const dv = toISO(raw);
+    // 'input' fires on every keystroke, so a date being typed is
+    // half-written for most of them. Say so and stop, rather than
+    // firing a request per character or rendering a confident verdict
+    // from a date the user has not finished entering.
+    dateEl.classList.toggle('bad', raw !== '' && dv === null);
+    document.getElementById('dateEcho').textContent =
+        raw === '' ? 'Enter the date as dd/mm/yyyy'
+        : dv ? 'Reading as ' + fmtDate(dv)
+        : 'Enter the date as dd/mm/yyyy';
+    if (raw !== '' && dv === null) return;
+    const picker = document.getElementById('datePicker');
+    if (picker && dv) picker.value = dv;
     const body = { current_rate:num('current_rate'), volume:num('volume'), date: dv || null };
     // Guard before we call. type="button" bypasses HTML5 required, so an
     // empty field would otherwise reach Number() as NaN and render "$NaN"
@@ -1003,8 +1059,12 @@ async function fillDates(dr) {
         }
         const d = await dr.json();
         const el = document.getElementById('date');
-        el.min = d.min; el.max = d.max; el.value = d.max;
-        range.textContent = `(${fmtDate(d.min)} – ${fmtDate(d.max)})`;
+        el.value = fmtDate(d.max);
+        const picker = document.getElementById('datePicker');
+        if (picker) {
+            picker.min = d.min; picker.max = d.max; picker.value = d.max;
+        }
+        range.textContent = `(dd/mm/yyyy · ${fmtDate(d.min)} – ${fmtDate(d.max)})`;
     } catch (e) {
         range.textContent = '(date range unavailable)';
     }
@@ -1376,6 +1436,17 @@ const VOYAGE_HINT = {
 };
 let fleetSeq = 0;
 
+// Typing "1500000" is seven keystrokes. The MILP answers in about a
+// quarter of a second, which is fast enough to feel live and quite
+// fast enough to be worth not doing seven times on the way there.
+function debounce(fn, ms) {
+    let timer = null;
+    return function () {
+        clearTimeout(timer);
+        timer = setTimeout(fn, ms);
+    };
+}
+
 // The id is written into markup and read back by getElementById, so
 // both sides must agree. They did not: one was escaped and the other
 // was not, so a class name containing & or < would have had its cost
@@ -1412,6 +1483,22 @@ async function solveFleet() {
         const el = document.getElementById(costId(v.name));
         if (el && el.value !== '') voyage[v.name] = Number(el.value);
     });
+    // src/optimise.py requires a cost for EVERY class in play and
+    // refuses the whole request otherwise - deliberately, because
+    // dropping a class because its box happens to be empty would
+    // quietly recommend a more expensive fleet and call it the
+    // cheapest. Now that this panel solves as the fields are edited, a
+    // half-cleared box would otherwise post a request whose only
+    // possible answer is a 400. Say which ones are missing instead.
+    const missing = (PORT_REF.vessels || [])
+        .filter(v => !(v.name in voyage)).map(v => v.name);
+    if (missing.length) {
+        out.innerHTML = '<p class="note"><b>A voyage cost is needed for every '
+            + 'class: ' + rkEsc(missing.join(', ')) + '.</b> The optimiser will '
+            + 'not silently drop a class because its box is empty - that would '
+            + 'recommend a more expensive fleet and call it the cheapest.</p>';
+        return;
+    }
     const fee = Number(document.getElementById('portFee').value) || 0;
     const inl = Number(document.getElementById('inlandFee').value) || 0;
     const lit = Number(document.getElementById('lightFee').value) || 0;
@@ -1719,6 +1806,37 @@ window.addEventListener('DOMContentLoaded', async () => {
     const sf = document.getElementById('solveFleet');
     if (sf) sf.addEventListener('click', solveFleet);
 
+    // The card used to render as a bare form over an empty result until
+    // someone noticed the Solve button, which reads as unfinished
+    // rather than as waiting - every other panel on the page fills
+    // itself. The fields already carry figures, so solve with them and
+    // then follow the edits. Delegated on the container because
+    // buildCostInputs() replaces those inputs wholesale.
+    const solveSoon = debounce(solveFleet, 400);
+    const costBox = document.getElementById('voyageCosts');
+    if (costBox) costBox.addEventListener('input', solveSoon);
+    ['portFee', 'inlandFee', 'lightFee', 'ballastPct', 'parcel_t']
+        .forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', solveSoon);
+        });
+    solveFleet();
+
+    const cal = document.getElementById('dateCal');
+    const dpick = document.getElementById('datePicker');
+    if (cal && dpick) {
+        cal.addEventListener('click', () => {
+            // showPicker() is Chrome/Edge; elsewhere focusing at least
+            // surfaces the native control rather than doing nothing.
+            try { dpick.showPicker(); } catch (e) { dpick.focus(); }
+        });
+        dpick.addEventListener('change', () => {
+            if (!dpick.value) return;
+            document.getElementById('date').value = fmtDate(dpick.value);
+            predict();
+        });
+    }
+
     ['current_rate','volume','date'].forEach(id => {
         const el = document.getElementById(id);
         if (el) { el.addEventListener('change', predict); el.addEventListener('input', predict); }
@@ -1729,3 +1847,4 @@ window.addEventListener('DOMContentLoaded', async () => {
     portOptions();
 });
 </script>
+</html>
