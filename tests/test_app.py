@@ -130,11 +130,23 @@ def _main():
                         3 * len(oos) // 4, len(oos) - 1]]]
     rate, tons = 42.5, 160000.0
     bad = 0
+    # Two artefacts now back the replay - the licensed years to
+    # 2019-07-24 and the extended series after - so the row has to be
+    # taken from whichever model actually answered. Recomputing every
+    # date against the extended file would fail on the early ones for
+    # the right reason and look like an arithmetic bug.
+    _lic_path = os.path.join(paths.PROCESSED, 'oos_licensed.parquet')
+    _lic = pd.read_parquet(_lic_path) if os.path.exists(_lic_path) else None
+    if _lic is not None:
+        _lic.index = pd.to_datetime(_lic.index)
     for ds in dates:
         r = requests.post(BASE + '/api/predict', timeout=15, json={
             'current_rate': rate, 'volume': tons, 'date': ds}).json()
         d = pd.Timestamp(r['as_of'])
-        row = oos.loc[d]
+        _from_lic = str((r.get('source') or {}).get('name', '')).startswith(
+            'licensed')
+        src_df = _lic if (_from_lic and _lic is not None) else oos
+        row = src_df.loc[d]
         pred, act = float(row[best]), float(row['y'])
 
         ok = True
@@ -725,8 +737,19 @@ def _main():
                  'loadRisk', 'riskRow', 'rkEsc', 'MEASURED', 'CONTEXT'):
         check('page wires %r' % hook, hook in html)
     check('nav offers the risk view', 'data-v="risk"' in html)
-    check('risk is in the view list so the hash route reaches it',
-          "VIEWS = ['timing','fleet','ports','risk','proof']" in html)
+    # Membership, not the whole literal: pinning the exact array meant
+    # adding a sixth view broke a check about the fourth.
+    _views = re.search(r"const VIEWS = \[([^\]]*)\]", html)
+    check('the page declares a view list', bool(_views))
+    _names = set(re.findall(r"'([a-z]+)'", _views.group(1))) if _views else set()
+    for _v in ('timing', 'fleet', 'ports', 'risk', 'proof', 'booking'):
+        check('%s is in the view list, so the hash route reaches it' % _v,
+              _v in _names, sorted(_names))
+    check('every listed view has a matching section in the markup',
+          all('id="v-%s"' % v in html for v in _names), sorted(_names))
+    check('and every nav button points at a listed view',
+          set(re.findall(r'data-v="([a-z]+)"', html)) == _names,
+          (sorted(set(re.findall(r'data-v="([a-z]+)"', html))), sorted(_names)))
     check('the panel explains the measured/context split in words',
           'no measured effect' in html)
 
@@ -853,7 +876,7 @@ def _main():
     if not node:
         print('       (node not installed - parser behaviour not executed)')
     else:
-        m_ = re.search(r'const toISO = v => \{.*?' + chr(92) + 'n\};', html,
+        m_ = re.search(r'const toISO = v => \{.*?' + chr(92) + 'n\\};', html,
                        re.S)
         check('toISO() is present to be tested', bool(m_))
         if m_:
@@ -954,10 +977,30 @@ def _main():
     # A reader looking at a panel that begins in 2012 and a picker that
     # begins in 2018 will ask, and the honest answer is that the
     # difference is the first training fold.
-    check('the replay card explains the 2018 start',
-          'February 2018' in html and '1,313' in html)
+    # Not a literal date. This sentence has now been wrong twice - it
+    # said February 2018 after the range moved to 2015, and would say
+    # July 2015 on a machine where the licensed model was never built.
+    # Prose about the data has to come from the data.
+    check('the replay card explains where history starts',
+          'id="replayFrom"' in html and 'History starts in' in html)
+    check('and takes the date from /api/dates rather than the markup',
+          "getElementById('replayFrom')" in html and 'd.min' in html)
+    # Scoped to the sentence itself. A whole-page grep also catches the
+    # JS comment that explains why the date must not be hardcoded, and
+    # failing on the explanation is not the same as failing on the bug.
+    _p0 = html.index('Pick a date and the model returns')
+    _note = html[_p0:html.index('</p>', _p0)]
+    check('no month-year is hardcoded into that sentence',
+          'July 2015' not in _note and 'February 2018' not in _note
+          and '2018' not in _note, _note[-140:])
+    check('and it still says why the early years cannot be replayed',
+          'trained the first fold' in html and 'own homework' in html)
     check('and says plainly what showing those years would be',
           'own homework' in html)
+    check('the build sequence tells the reader to build BOTH models',
+          'src.licensed_model' in io.open(os.path.join(os.path.dirname(
+              os.path.dirname(os.path.abspath(__file__))), 'README.md'),
+              encoding='utf-8').read())
     check('the two cards are distinguishable: one has an outcome, one '
           'does not',
           'nothing here has happened yet' in html.lower()
@@ -972,6 +1015,217 @@ def _main():
     for el in ('aheadStale', 'riskClearHead'):
         check('%s is toggled with .hidden, which now works' % el,
               el in html)
+
+
+    print('\n[32] the booking view colours only what was forecast')
+    check('there is a booking view in the nav and the router',
+          'data-v="booking"' in html and "'booking'" in html)
+    check('it asks the server for the ranking rather than computing one '
+          'in the page', "'/api/booking'" in html)
+    book = html[html.index('async function loadBooking'):
+                html.index('async function loadSeasonal')]
+    # The whole difference between this and a grid of plausible numbers
+    # is that the uncoloured squares stay uncoloured.
+    check('days with no forecast are drawn as out-of-scope, not filled in',
+          "'beyond horizon'" in book and "cal out" in book)
+    check('weekends are named as having no market, not left ambiguous',
+          "'no market'" in book)
+    check('past days are labelled past', "'past'" in book)
+    check('the colours are only applied where a forecast exists',
+          'if (!hit)' in book)
+    check('the ranking-only caveat is rendered when it applies',
+          'ranking_only' in book and 'rank days by expectation' in book)
+    check('and it quotes the spread against the interval width',
+          'spread_pct' in book and 'typical_interval_pct' in book)
+
+    print('\n[33] the rupee figure shows its working')
+    check('it names the measured percentage and its p-value',
+          'saved_pct' in book and 'saved_p_value' in book)
+    check("it says which figures are the reader's",
+          'are <b>yours</b>' in book)
+    check('and it carries the caveats with the number, not away from it',
+          'lose_rate_pct' in book and 'beats_momentum' in book)
+    check('the exchange rate is shown with its date, not asserted',
+          'usd_inr_as_of' in book)
+    check('no hardcoded 83.4 rupee rate anywhere on the page',
+          '83.4' not in html)
+
+    print('\n[34] the playbook is labelled descriptive, not predictive')
+    seas = html[html.index('async function loadSeasonal'):]
+    seas = seas[:seas.index('async function fillDates')]
+    check('the page says outright it is not a forecast',
+          'not a forecast' in seas)
+    check('it explains that overlapping windows shrink the sample',
+          'effective count' in seas)
+    check('and that twelve months means twelve tests',
+          'twelve months' in seas)
+    check('the count that CLEARED is computed, not written',
+          'm.significant' in seas and 'strong_threshold_pct' in seas)
+    check('near misses are named as such rather than promoted',
+          'miss it' in seas or 'large, not proven' in seas)
+    check('the unknown cause is stated', 'Cause unknown' in seas)
+
+    print('\n[35] both new endpoints answer')
+    for url, payload in (('/api/seasonal', None),
+                         ('/api/booking', {'parcel_t': 160000,
+                                           'annual_t': 10000000,
+                                           'rate_usd_per_t': 20})):
+        try:
+            if payload is None:
+                rr = requests.get(BASE + url, timeout=60)
+            else:
+                rr = requests.post(BASE + url, json=payload, timeout=60)
+            ok, detail = rr.status_code == 200, rr.status_code
+        except Exception as exc:
+            ok, detail = False, str(exc)[:60]
+        check('%s answers 200' % url, ok, detail)
+    for bad, why in (({'parcel_t': 0}, 'a zero parcel'),
+                     ({'parcel_t': 'abc'}, 'a non-numeric parcel'),
+                     ({'rate_usd_per_t': -5}, 'a negative rate')):
+        try:
+            rr = requests.post(BASE + '/api/booking', json=bad, timeout=60)
+            ok = rr.status_code == 400 and 'error' in rr.json()
+            detail = rr.status_code
+        except Exception as exc:
+            ok, detail = False, str(exc)[:60]
+        check('%s is refused as JSON 400' % why, ok, detail)
+
+
+    print('\n[36] the forward card answers before it explains')
+    # A table of ten horizons is the working. A desk wants the call
+    # first, and a reader who skims a table finds nothing at all.
+    check('there is a verdict banner above the table',
+          'aheadVerdict' in html and 'aheadCall' in html
+          and html.index('aheadVerdict') < html.index('aheadBody'))
+    for state in ('vd-go', 'vd-wait', 'vd-none'):
+        check('it can render the %s state' % state, state in html)
+    # loadAhead, not loadBooking: the verdict is computed where the
+    # forecast is fetched. `book` is a different function's slice.
+    _v0 = html.index('async function loadAhead')
+    _v1 = html.index('let bookSeq')
+    vd = html[_v0:_v1]
+    check('the three calls are all reachable',
+          "'Fix early'" in vd and "'Wait'" in vd
+          and "'No clear call'" in vd)
+    check('the call is DERIVED from the cheapest forecast day, not written',
+          'cheapest.horizon_days === soonest.horizon_days' in vd)
+    check('a flat curve is called flat rather than forced into a verdict',
+          'spread < 0.5' in vd)
+    # The verdict is the most quotable thing on the page, so the two
+    # things that qualify it are not allowed to be optional.
+    check('the confidence qualifier is always appended, not conditional',
+          'weaker signal than the model usually produces' in vd
+          and 'Signal strength is normal' in vd)
+    check('and a losing year is named in the banner itself',
+          'is a year it is not beating' in vd
+          and 'not the decision' in vd)
+    check('the banner hides when there is no forecast to summarise',
+          'if (v) v.hidden = !on;' in vd)
+
+    print('\n[37] ordinals are computed, not concatenated')
+    check('there is an ord() helper', 'const ord = v =>' in html)
+    check('and no bare th-concatenation is left',
+          "'th percentile" not in html)
+    node = _sh4.which('node')
+    if node:
+        m_o = re.search(r'const ord = v => \{.*?' + chr(92) + 'n\};', html, re.S)
+        check('ord() is present to be tested', bool(m_o))
+        if m_o:
+            js = (m_o.group(0) + chr(92) + 'n' + 'const C='
+                  + json.dumps([[1, '1st'], [2, '2nd'], [3, '3rd'], [4, '4th'],
+                                [11, '11th'], [12, '12th'], [13, '13th'],
+                                [21, '21st'], [22, '22nd'], [23, '23rd'],
+                                [41, '41st'], [100, '100th'], [101, '101st'],
+                                [111, '111th']]) + ';'
+                  + 'let bad=[];for(const [n,w] of C){if(ord(n)!==w)bad.push([n,ord(n),w]);}'
+                  + 'console.log(JSON.stringify(bad));')
+            tmpo = os.path.join(_tf3.mkdtemp(), 'o.js')
+            io.open(tmpo, 'w', encoding='utf-8').write(js)
+            try:
+                out = _sp.run([node, tmpo], capture_output=True, text=True,
+                              timeout=60)
+                wrong = json.loads(out.stdout.strip() or '[]')
+            except Exception as exc:
+                wrong = [['node failed', str(exc)[:50], '']]
+            check('ordinals are right, 11th/12th/13th included', not wrong,
+                  wrong)
+            _sh4.rmtree(os.path.dirname(tmpo), ignore_errors=True)
+
+
+    print('\n[38] two models cover the replay, and the seam is labelled')
+    # A deliberate compromise for the demo: the licensed Baltic years
+    # score better than the extended series, so the replay uses them
+    # where they reach. Two models behind one chart is exactly the sort
+    # of thing that produces an indefensible number, so the rule is
+    # fixed in advance and every call says which model answered.
+    import datetime as _dt
+    lic_meta_path = os.path.join(paths.MODELS, 'metrics_licensed.json')
+    check('the licensed-years model has been built', os.path.exists(lic_meta_path),
+          lic_meta_path)
+    if not os.path.exists(lic_meta_path):
+        print('       run python -m src.licensed_model')
+    else:
+        lm = json.load(io.open(lic_meta_path, encoding='utf-8'))
+        boundary = lm['scored_end']
+        check('the licensed model stops where its data does (%s)' % boundary,
+              boundary <= '2019-07-31', boundary)
+        check('and it never used the extension',
+              'no extension' in lm['source'], lm['source'])
+        check('it explains why it cannot reach 2012',
+              'first trained on' in lm['why_not_2012'])
+
+        # The routing rule, exercised on both sides of the boundary and
+        # on the boundary itself.
+        def who(date):
+            rr = requests.post(BASE + '/api/predict', timeout=60, json={
+                'date': date, 'current_rate': 42.5, 'volume': 160000})
+            if rr.status_code != 200:
+                return None, rr.status_code
+            return rr.json().get('source', {}).get('name'), rr.status_code
+
+        for date, want in (('2016-05-10', 'licensed'),
+                           (boundary, 'licensed'),
+                           ('2019-08-15', 'extended'),
+                           ('2024-05-10', 'extended'),
+                           ('2026-08-27', 'extended')):
+            got, code = who(date)
+            check('%s is answered by the %s model' % (date, want),
+                  got is not None and want in got, (got, code))
+
+        # The figure quoted must be the answering model's own.
+        rr = requests.post(BASE + '/api/predict', timeout=60, json={
+            'date': '2016-05-10', 'current_rate': 42.5, 'volume': 160000})
+        src = rr.json().get('source', {})
+        check('a licensed-era call quotes the licensed accuracy (%.1f%%)'
+              % (src.get('direction_pct') or 0),
+              abs((src.get('direction_pct') or 0)
+                  - lm['models']['ridge']['direction_pct']) < 1e-9,
+              (src.get('direction_pct'), lm['models']['ridge']['direction_pct']))
+        check('and its scored window is the licensed one, not the panel',
+              src.get('scored_from') == lm['scored_start']
+              and src.get('scored_to') == lm['scored_end'])
+
+        # The thing that must never exist.
+        check('no averaged accuracy is served anywhere',
+              'blended' not in json.dumps(lm).lower()
+              and 'combined_direction' not in json.dumps(lm).lower())
+
+    print('\n[39] the picker and the prose match the two-model range')
+    rr = requests.get(BASE + '/api/dates', timeout=60)
+    dd = rr.json()
+    check('the date range starts in 2015, not 2018',
+          dd['min'] < '2016-01-01', dd['min'])
+    check('and still ends at the newest scored day', dd['max'] >= '2026-01-01',
+          dd['max'])
+    check('the page no longer claims history starts in February 2018',
+          'History starts in <b>February 2018</b>' not in html)
+    check('it names both models and both figures',
+          'licensed Baltic years' in html and '64.9%' in html
+          and '61.7%' in html)
+    check('and states outright that they are never averaged',
+          'never averaged' in html or 'no combined figure' in html)
+    check('each replayed call is labelled with the model that made it',
+          'Answered by' in html and 'r.source' in html)
 
 
     if FAIL:

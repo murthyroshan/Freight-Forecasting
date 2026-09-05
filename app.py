@@ -44,7 +44,8 @@ except ImportError:                     # optional; env vars still work
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src import (paths, ports, congestion, risk, optimise,  # noqa: E402
-                 ballast)
+                 ballast,
+                 booking, seasonal)
 
 app = Flask(__name__)
 
@@ -53,6 +54,8 @@ PROCUREMENT_PATH = os.path.join(paths.MODELS, 'procurement.json')
 FORECAST_PATH = os.path.join(paths.MODELS, 'live_forecast.json')
 LIVE_PATH = os.path.join(paths.MODELS, 'live_metrics.json')
 OOS_PATH = os.path.join(paths.PROCESSED, 'oos_predictions.parquet')
+OOS_LIC_PATH = os.path.join(paths.PROCESSED, 'oos_licensed.parquet')
+MET_LIC_PATH = os.path.join(paths.MODELS, 'metrics_licensed.json')
 
 MISSING = ('Artefact %s is missing. Run:  python -m src.fetch_data && '
            'python -m src.build_panel && python -m src.train_model')
@@ -151,6 +154,50 @@ OOS = pd.read_parquet(OOS_PATH) if os.path.exists(OOS_PATH) else None
 if OOS is not None:
     OOS.index = pd.to_datetime(OOS.index)
 
+# The licensed-years model. The Mendeley copy stops in July 2019 and a
+# model fitted on it alone scores better than the extended one, so the
+# replay uses it where it reaches and the extended model after. Two
+# models behind one chart is a seam; it is labelled per call rather than
+# blended, and there is deliberately no combined accuracy figure.
+OOS_LIC = (pd.read_parquet(OOS_LIC_PATH)
+           if os.path.exists(OOS_LIC_PATH) else None)
+if OOS_LIC is not None:
+    OOS_LIC.index = pd.to_datetime(OOS_LIC.index)
+MET_LIC = _load_json(MET_LIC_PATH)
+
+
+def _replay_source(when):
+    """Which model answers for this date, and what it scored.
+
+    The rule is fixed in advance rather than per date: the licensed
+    model while its data reaches, the extended model after. Choosing
+    per date by whichever scored better would be picking the answer
+    after seeing it.
+    """
+    if (OOS_LIC is not None and MET_LIC is not None
+            and when <= OOS_LIC.index.max()):
+        r = MET_LIC['models']['ridge']
+        return OOS_LIC, {
+            'name': 'licensed Baltic years',
+            'basis': MET_LIC['source'],
+            'scored_from': MET_LIC['scored_start'],
+            'scored_to': MET_LIC['scored_end'],
+            'direction_pct': r['direction_pct'],
+            'skill_vs_zero_pct': r['skill_vs_zero_pct'],
+            'n_scored': MET_LIC['n_scored'],
+        }
+    best = METRICS.get('best_model', 'ridge') if METRICS else 'ridge'
+    m = (METRICS or {}).get('models', {}).get(best, {})
+    return OOS, {
+        'name': 'extended series',
+        'basis': 'licensed copy spliced to a validated mirror',
+        'scored_from': str(OOS.index.min().date()) if OOS is not None else None,
+        'scored_to': str(OOS.index.max().date()) if OOS is not None else None,
+        'direction_pct': m.get('direction_pct'),
+        'skill_vs_zero_pct': m.get('skill_vs_zero_pct'),
+        'n_scored': (METRICS or {}).get('n_scored'),
+    }
+
 # The panel carries the Capesize level, which we need to turn a log
 # return into a displayable rate path.
 PANEL_PATH = os.path.join(paths.PROCESSED, 'panel.parquet')
@@ -244,6 +291,42 @@ def api_metrics():
     if METRICS is None:
         return jsonify({'error': MISSING % METRICS_PATH}), 503
     return jsonify(_json_safe(METRICS))
+
+
+@app.route('/api/seasonal')
+def api_seasonal():
+    """Which months the index has actually moved in. Descriptive."""
+    p = seasonal.profile()
+    if p is None:
+        return jsonify({'error': MISSING % 'the panel'}), 503
+    return jsonify(_json_safe(p))
+
+
+@app.route('/api/booking', methods=['POST'])
+def api_booking():
+    """The forecast days ranked, and what the timing edge is worth.
+
+    The parcel and the annual tonnage are separate on purpose: one
+    prices the shipment being booked, the other a year's programme.
+    Both, and the freight rate, are the caller's figures - this project
+    has no sourced rate for the lane and will not invent one.
+    """
+    data, err = _body()
+    if err:
+        return err
+    try:
+        parcel = _number(data.get('parcel_t', 160000), 'parcel_t',
+                         lo=1.0, hi=1e9)
+        annual = _number(data.get('annual_t', 10000000), 'annual_t',
+                         lo=1.0, hi=1e12)
+        rate = _number(data.get('rate_usd_per_t', 20.0), 'rate_usd_per_t',
+                       lo=0.01, hi=1e5)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    out = booking.build(parcel, annual, rate)
+    if out is None:
+        return jsonify({'error': MISSING_FORECAST % FORECAST_PATH}), 503
+    return jsonify(_json_safe(out))
 
 
 @app.route('/api/forecast')
@@ -601,9 +684,15 @@ def api_dates():
     """The window over which genuine out-of-sample forecasts exist."""
     if not READY:
         return jsonify({'error': MISSING % OOS_PATH}), 503
-    return jsonify({'min': str(OOS.index.min().date()),
+    lo = OOS.index.min()
+    n = len(OOS)
+    if OOS_LIC is not None and len(OOS_LIC):
+        # The picker spans both models, because the replay does.
+        lo = min(lo, OOS_LIC.index.min())
+        n += int((OOS_LIC.index < OOS.index.min()).sum())
+    return jsonify({'min': str(lo.date()),
                     'max': str(OOS.index.max().date()),
-                    'n': int(len(OOS))})
+                    'n': int(n)})
 
 
 @app.route('/api/predict', methods=['POST'])
@@ -650,20 +739,26 @@ def api_predict():
     else:
         when = OOS.index.max()
 
-    if when < OOS.index.min() or when > OOS.index.max():
+    src, src_meta = _replay_source(when)
+    if src is None or not len(src):
+        return jsonify({'error': MISSING % OOS_PATH}), 503
+    lo_all = min(OOS.index.min(),
+                 OOS_LIC.index.min() if OOS_LIC is not None and len(OOS_LIC)
+                 else OOS.index.min())
+    if when < lo_all or when > OOS.index.max():
         return jsonify({'error':
                         'No out-of-sample forecast for %s. Available range '
-                        'is %s to %s.' % (when.date(), OOS.index.min().date(),
+                        'is %s to %s.' % (when.date(), lo_all.date(),
                                           OOS.index.max().date())}), 400
 
     # Nearest trading day at or before the request - the desk asks on a
     # Sunday, the index published on the Friday.
-    idx = OOS.index[OOS.index <= when]
+    idx = src.index[src.index <= when]
     if len(idx) == 0:
         return jsonify({'error': 'No trading day on or before %s'
                         % when.date()}), 400
     d = idx[-1]
-    row = OOS.loc[d]
+    row = src.loc[d]
 
     best = METRICS.get('best_model', 'ridge')
     pred = float(row[best])
@@ -721,8 +816,11 @@ def api_predict():
                   'this date with a %d-day purge gap' % horizon),
         'assumption': ('the desk rate moves with the Capesize index, which '
                        'is what dry bulk charter parties are benchmarked to'),
-        'skill_vs_naive': METRICS.get('models', {}).get(best, {})
-                                 .get('skill_vs_zero_pct'),
+        # Which of the two models answered, and what THAT model scored.
+        # Never a blend: 64.9% belongs to the licensed years and 61.7% to
+        # the extended series, and an average would describe neither.
+        'source': src_meta,
+        'skill_vs_naive': src_meta.get('skill_vs_zero_pct'),
     })
 
 

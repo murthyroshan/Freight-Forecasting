@@ -1,0 +1,38 @@
+{
+  "model": "ridge",
+  "source": "licensed Mendeley Baltic copy only, no extension",
+  "panel_rows": 1682,
+  "panel_start": "2012-10-29",
+  "panel_end": "2019-07-24",
+  "n_scored": 1010,
+  "n_effective": 202,
+  "horizon_days": 5,
+  "scored_start": "2015-07-10",
+  "scored_end": "2019-07-24",
+  "base_rate_pct": 51.68316831683168,
+  "models": {
+    "zero": {
+      "rmse": 0.24692635838140278,
+      "skill_vs_zero_pct": 0.0,
+      "direction_pct": 0.297029702970297
+    },
+    "momentum": {
+      "rmse": 0.23423491275320826,
+      "skill_vs_zero_pct": 5.139769488922397,
+      "direction_pct": 62.772277227722775
+    },
+    "ridge": {
+      "rmse": 0.22852949550467683,
+      "skill_vs_zero_pct": 7.450343899013867,
+      "direction_pct": 64.85148514851485
+    },
+    "lgbm": {
+      "rmse": 0.23297779548857384,
+      "skill_vs_zero_pct": 5.648875634120831,
+      "direction_pct": 60.29702970297029
+    }
+  },
+  "coverage": 0.8198019801980198,
+  "note": "scored on its own folds; this figure describes this model over this period only and is never averaged with the extended model",
+  "why_not_2012": "a walk-forward model cannot score the block it first trained on - the first 672 days are that block"
+}

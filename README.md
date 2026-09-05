@@ -47,6 +47,7 @@ No API keys. Every data source is free and keyless.
 python -m src.fetch_data      # 29 parquet files  (~3 min first run)
 python -m src.build_panel     # 3,284 rows × 17 features
 python -m src.train_model     # walk-forward evaluation
+python -m src.licensed_model  # the licensed-years model for the replay
 python -m src.procurement     # what the forecast was worth
 python -m src.live_model      # the control experiment
 python -m src.optimise        # vessel and berth selection

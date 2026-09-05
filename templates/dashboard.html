@@ -171,6 +171,44 @@ td.n,th.n{text-align:right;font-family:var(--fm)}
    .gl is one !important away from the same problem. Stated once here so
    the property means what it says everywhere on the page. */
 [hidden]{display:none!important}
+/* Booking calendar. Only the days the model forecast are coloured; the
+   rest stay blank on purpose, because a calendar that fills a whole
+   year is claiming to know days no model was fitted for. */
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.calhead{font-family:var(--fm);font-size:9.5px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3);text-align:center;padding-bottom:6px}
+.cal{border:1px solid var(--rule);border-radius:4px;padding:7px 8px;min-height:76px;
+  background:var(--paper);display:flex;flex-direction:column;gap:2px}
+.cal.void{background:transparent;border-color:transparent}
+.cal.out{opacity:.4}
+.cal .d{font-family:var(--fm);font-size:12px;font-weight:700;color:var(--ink-2)}
+.cal .mv{font-family:var(--fm);font-size:11px;font-weight:700}
+.cal .xt{font-family:var(--fm);font-size:9.5px;color:var(--ink-3)}
+.cal .vb{font-family:var(--fm);font-size:8.5px;font-weight:700;letter-spacing:.08em;
+  padding:1px 5px;border-radius:2px;align-self:flex-start;border:1px solid}
+.cal-book{background:var(--good-b);border-color:var(--good-r)}
+.cal-book .vb{color:var(--good-t);border-color:var(--good-r)}
+.cal-watch{background:var(--warn-b);border-color:var(--warn-r)}
+.cal-watch .vb{color:var(--warn-t);border-color:var(--warn-r)}
+.cal-avoid{background:var(--crit-b);border-color:var(--crit-r)}
+.cal-avoid .vb{color:var(--crit-t);border-color:var(--crit-r)}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:820px){.grid3{grid-template-columns:1fr}}
+/* The answer, before the evidence for it. A table of ten horizons is
+   the working; a desk wants the call first and the working underneath. */
+.vd{border:1px solid;border-radius:5px;padding:14px 16px;margin:0 0 12px;
+  display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.vd .w{font-family:var(--fd);font-size:27px;font-weight:600;line-height:1.05;
+  letter-spacing:-.01em;white-space:nowrap}
+.vd .t{flex:1 1 320px;min-width:0;font-size:13px;line-height:1.5}
+.vd-go{background:var(--good-b);border-color:var(--good-r)}
+.vd-go .w{color:var(--good-t)}
+.vd-wait{background:var(--warn-b);border-color:var(--warn-r)}
+.vd-wait .w{color:var(--warn-t)}
+.vd-none{background:var(--paper);border-color:var(--rule)}
+.vd-none .w{color:var(--ink-2)}
+.rupee{font-family:var(--fd);font-size:34px;font-weight:600;color:var(--rust);
+  line-height:1.1;letter-spacing:-.01em}
 .tag{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:3px;font-size:10.5px;font-weight:650;white-space:nowrap;border:1px solid}
 .t-good{color:var(--good-t);background:var(--good-b);border-color:var(--good-r)}
 .t-warn{color:var(--warn-t);background:var(--warn-b);border-color:var(--warn-r)}
@@ -273,7 +311,8 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
     <button data-v="fleet"><em>02</em>Vessel &amp; port</button>
     <button data-v="ports"><em>03</em>Port activity</button>
     <button data-v="risk"><em>04</em>Risk</button>
-    <button data-v="proof"><em>05</em>Validation</button>
+    <button data-v="booking"><em>05</em>Booking calendar</button>
+    <button data-v="proof"><em>06</em>Validation</button>
   </nav></div>
 
   <!-- ══════════ 01 · timing ══════════ -->
@@ -288,6 +327,10 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
     <div class="card" style="margin-bottom:18px">
       <div class="cap">The days ahead &middot; nothing here has happened yet
         <span class="tag t-bad" id="aheadStale" hidden style="margin-left:8px"></span></div>
+      <div class="vd vd-none" id="aheadVerdict" hidden>
+        <div class="w" id="aheadCall">&mdash;</div>
+        <div class="t" id="aheadWhy"></div>
+      </div>
       <p class="note" id="aheadIntro" style="margin:0 0 10px"><span class="skel"></span></p>
       <div class="plot" id="aheadPlot"><canvas id="aheadChart"></canvas></div>
       <div class="scroll" id="aheadTable"><table>
@@ -304,10 +347,15 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
         <p class="note" style="margin:0 0 10px">Pick a date and the model returns
           the forecast it made <em>at that moment</em> — fitted only on data
           before it, with a five-day purge gap — and the outcome beside it.
-          History starts in <b>February 2018</b> although the panel begins in
-          2012: the earlier 1,313 days trained the first fold, so the model has
-          no out-of-sample call for them. Showing one would be the model marking
-          its own homework.</p>
+          <b>Two models cover this range</b>: the licensed Baltic years to
+          24/07/2019, which score 64.9%, and the extended series after, which
+          score 61.7%. Every call names the one that answered it and quotes
+          <em>that</em> model's accuracy — there is no combined figure, because
+          an average would describe neither. History starts in
+          <b id="replayFrom">&mdash;</b> although the panel begins in 2012: the
+          earlier days trained the first fold, and a walk-forward model cannot
+          grade the block it learned from. Showing a call for them would be
+          marking its own homework.</p>
         <div class="f">
           <label>Decision date <span id="dateRange" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink-3)"></span></label>
           <div class="datefield">
@@ -477,6 +525,68 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
       <div class="gl" style="margin-top:20px" id="riskClearHead">Checked, nothing raised</div>
       <div class="rk rq" id="riskClear"></div>
       <p class="note" id="riskNote"></p>
+    </div>
+  </div>
+
+  <!-- ══════════ 05 · booking ══════════ -->
+  <div class="view" id="v-booking">
+    <div class="lede">
+      <h2>When to book</h2>
+      <p>The days the model actually forecast, ranked cheapest to dearest, with
+        what the difference costs on your parcel. Days outside the horizon are
+        left blank — a calendar that colours next August is claiming to know
+        something no model here was fitted for.</p>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="cap">Your figures
+        <span class="tag t-warn" style="margin-left:8px">YOUR NUMBERS</span></div>
+      <p class="note" style="margin:0 0 10px">This project has no sourced freight
+        rate for the East Coast lane, so the rate and both tonnages are yours.
+        The percentage they multiply is measured here; the dollar in rupees is
+        read from the panel, not typed into a constant.</p>
+      <div class="grid3">
+        <div class="f"><label>Parcel — tonnes per shipment</label>
+          <input type="number" id="bk_parcel" value="160000" step="1000" min="1"></div>
+        <div class="f"><label>Annual programme — tonnes</label>
+          <input type="number" id="bk_annual" value="10000000" step="100000" min="1"></div>
+        <div class="f"><label>Freight rate — $ per tonne</label>
+          <input type="number" id="bk_rate" value="20.00" step="0.5" min="0.01"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="cap">Booking calendar · <span id="bk_month">&mdash;</span></div>
+      <p class="note" id="bk_legend" style="margin:0 0 10px"><span class="skel"></span></p>
+      <div id="bk_cal"></div>
+      <p class="note" id="bk_scope" style="margin:10px 0 0"></p>
+    </div>
+
+    <div class="split">
+      <div class="card">
+        <div class="cap">What the timing edge is worth in a year</div>
+        <div class="rupee" id="bk_crore">&mdash;</div>
+        <p class="note" id="bk_impact" style="margin:6px 0 0"><span class="skel"></span></p>
+      </div>
+      <div class="card">
+        <div class="cap">Cost of waiting · this parcel</div>
+        <div class="scroll"><table>
+          <thead><tr><th>If you book</th><th class="n">Expected</th>
+            <th class="n">vs cheapest</th><th class="n">Costs extra</th></tr></thead>
+          <tbody id="bk_wait"><tr><td colspan="4"><span class="skel"></span></td></tr></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="cap">Seasonal playbook · what the index has done, not what it will do</div>
+      <p class="note" id="bk_seasnote" style="margin:0 0 10px"><span class="skel"></span></p>
+      <div class="scroll"><table>
+        <thead><tr><th>Month</th><th class="n">Windows</th><th class="n">Mean move</th>
+          <th class="n">Weeks up</th><th class="n">p</th><th>Verdict</th></tr></thead>
+        <tbody id="bk_seas"><tr><td colspan="6"><span class="skel"></span></td></tr></tbody>
+      </table></div>
+      <p class="note" id="bk_cause" style="margin:10px 0 0"></p>
     </div>
   </div>
 
@@ -678,6 +788,16 @@ async function getJSON(url, opts, ms) {
 
 const nfix = (v, dp) => (v === null || v === undefined || !isFinite(v))
     ? '\u2014' : Number(v).toFixed(dp === undefined ? 2 : dp);
+// 41th, 22th and 3th. English ordinals are irregular enough that
+// concatenating 'th' is wrong roughly a third of the time, and the
+// percentile appears twice on the page.
+const ord = v => {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    const n = Math.round(v), t = n % 100, u = n % 10;
+    const sfx = (t >= 11 && t <= 13) ? 'th'
+        : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th';
+    return n + sfx;
+};
 const nloc = v => (v === null || v === undefined || !isFinite(v))
     ? '\u2014' : Number(v).toLocaleString();
 const rkTitle = t => String(t || '').split('_')
@@ -860,6 +980,13 @@ async function predict() {
           ${pct(r.actual_move_pct)} &rarr; $${r.actual_rate}/t. Direction
           <b style="color:${hit ? 'var(--good-t)' : 'var(--crit-t)'}">${hit ? 'correct' : 'wrong'}</b>,
           outcome ${r.inside_interval ? 'inside' : '<b>outside</b>'} the ${r.interval_pct}% interval.</div>
+        ${!r.source ? '' : `<div class="truth" style="margin-top:6px">
+          <b style="color:var(--ink-2)">Answered by:</b> the
+          <b>${rkEsc(r.source.name)}</b> model — ${rkEsc(r.source.basis)}.
+          It scores <b>${nfix(r.source.direction_pct, 1)}%</b> direction over
+          ${fmtDate(r.source.scored_from)} to ${fmtDate(r.source.scored_to)}
+          (${nloc(r.source.n_scored)} weeks). Two models cover this chart and
+          that figure is <b>this one's</b> — they are never averaged.</div>`}
       </div>`;
 }
 
@@ -1092,8 +1219,10 @@ async function loadAhead() {
         // card explaining what to run.
         const p = document.getElementById('aheadPlot');
         const t = document.getElementById('aheadTable');
+        const v = document.getElementById('aheadVerdict');
         if (p) p.hidden = !on;
         if (t) t.hidden = !on;
+        if (v) v.hidden = !on;
     };
     const stop = msg => {
         intro.textContent = msg;
@@ -1127,6 +1256,86 @@ async function loadAhead() {
             stale.hidden = false;
             stale.textContent = f.data_age_days + ' days stale';
         } else { stale.hidden = true; }
+
+        // The call, read straight off the same rows the table shows.
+        // Nothing new is claimed here: the cheapest expected day either
+        // is the nearest one or it is not, and the confidence is the
+        // strength figure already in every row.
+        const byDay = hs.slice().sort((a, b) => a.horizon_days - b.horizon_days);
+        const cheapest = hs.reduce((a, b) =>
+            b.expected_move_pct < a.expected_move_pct ? b : a);
+        const dearest = hs.reduce((a, b) =>
+            b.expected_move_pct > a.expected_move_pct ? b : a);
+        const spread = dearest.expected_move_pct - cheapest.expected_move_pct;
+        const topStrength = Math.max.apply(null,
+            hs.map(h => h.strength_pct || 0));
+        const year = f.current_year;
+        const badYear = year && (year.skill_pct < 0
+                                 || year.direction_pct <= year.base_rate_pct);
+        const soonest = byDay[0];
+        const box = document.getElementById('aheadVerdict');
+        const call = document.getElementById('aheadCall');
+        const why = document.getElementById('aheadWhy');
+
+        // What waiting actually buys, against what the model admits it
+        // does not know. A gap of two points inside a seventy-point
+        // interval is not a recommendation to wait three weeks, and the
+        // longest horizons are routinely the least confident - so the
+        // verdict is measured against the uncertainty rather than
+        // simply pointing at the lowest number on the curve.
+        const gap = soonest.expected_move_pct - cheapest.expected_move_pct;
+        const typical = hs.map(h => h.hi_pct - h.lo_pct)
+            .sort((a, b) => a - b)[Math.floor(hs.length / 2)];
+        const worthIt = gap > 0 && gap >= typical * 0.15;
+
+        let cls, word, line;
+        if (spread < 0.5 || (cheapest.horizon_days !== soonest.horizon_days
+                             && !worthIt)) {
+            cls = 'vd-none'; word = 'No clear call';
+            line = 'The model expects the rate to move around and end up near '
+                 + 'where it started — ' + pct(soonest.expected_move_pct)
+                 + ' at the next opportunity against '
+                 + pct(cheapest.expected_move_pct) + ' at its cheapest, a gap of '
+                 + nfix(Math.abs(gap), 2) + '% inside a typical '
+                 + nfix(typical, 0) + '% interval. That difference is well '
+                 + 'within its own uncertainty, so <b>fix on berth availability '
+                 + 'and laycan, not on this</b>.';
+        } else if (cheapest.horizon_days === soonest.horizon_days) {
+            cls = 'vd-go'; word = 'Fix early';
+            line = 'The model expects the rate to <b>rise</b> from here — '
+                 + pct(soonest.expected_move_pct) + ' by ' + fmtDate(soonest.target_date)
+                 + ' and ' + pct(dearest.expected_move_pct) + ' by '
+                 + fmtDate(dearest.target_date) + '. The soonest day is the '
+                 + 'cheapest one it forecasts, so waiting is expected to cost you.';
+        } else {
+            cls = 'vd-wait'; word = 'Wait';
+            line = 'The model expects the cheapest day to be <b>'
+                 + fmtDate(cheapest.target_date) + '</b> ('
+                 + pct(cheapest.expected_move_pct) + '), against '
+                 + pct(soonest.expected_move_pct) + ' if you fix at the next '
+                 + 'opportunity — a gap of ' + nfix(gap, 2) + '%, which clears '
+                 + 'its own uncertainty. Holding is expected to pay here.';
+        }
+
+        // Confidence is not allowed to be silent. A weak week reads
+        // exactly like a strong one unless the card says otherwise.
+        line += ' <b>' + (topStrength >= 50
+            ? 'Signal strength is normal for this model'
+            : 'But this is a weaker signal than the model usually produces')
+            + '</b> (strongest call at the ' + ord(topStrength)
+            + ' percentile of its own history)';
+        if (badYear) {
+            line += ', and <b>' + year.period + ' is a year it is not beating</b> ('
+                 + nfix(year.direction_pct, 1) + '% against a '
+                 + nfix(year.base_rate_pct, 1) + '% base rate). Treat this as one '
+                 + 'input, not the decision.';
+        } else {
+            line += '.';
+        }
+        call.textContent = word;
+        why.innerHTML = line;
+        box.className = 'vd ' + cls;
+        box.hidden = false;
 
         const lvl = p => +(idx * (1 + p / 100)).toFixed(0);
         const labels = ['as of ' + fmtDate(f.as_of)]
@@ -1181,7 +1390,7 @@ async function loadAhead() {
         if (strongest < 50) {
             t += '<b>Every horizon above is a weaker signal than this model '
                 + 'usually produces</b> (the strongest is at the '
-                + nfix(strongest, 0) + 'th percentile of its own history). That is '
+                + ord(strongest) + ' percentile of its own history). That is '
                 + 'a reason to weight it lightly, and it is said here rather than '
                 + 'left for the reader to work out. ';
         }
@@ -1199,6 +1408,178 @@ async function loadAhead() {
     }
 }
 
+let bookSeq = 0;
+
+// The calendar only ever paints days the model was fitted for. Every
+// other square is drawn empty rather than filled with an interpolation,
+// which is the whole difference between this and a grid of plausible
+// numbers.
+async function loadBooking() {
+    const seq = ++bookSeq;
+    const cal = document.getElementById('bk_cal');
+    const legend = document.getElementById('bk_legend');
+    const wait = document.getElementById('bk_wait');
+    const num = id => {
+        const v = Number(document.getElementById(id).value);
+        return isFinite(v) && v > 0 ? v : null;
+    };
+    const parcel = num('bk_parcel'), annual = num('bk_annual'),
+          rate = num('bk_rate');
+    if (!parcel || !annual || !rate) {
+        legend.textContent = 'Enter a parcel size, an annual tonnage and a rate.';
+        cal.innerHTML = '';
+        wait.innerHTML = '<tr><td colspan="4">&mdash;</td></tr>';
+        return;
+    }
+    try {
+        const r = await fetchWithTimeout('/api/booking', 30000, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parcel_t: parcel, annual_t: annual,
+                                   rate_usd_per_t: rate }) });
+        const d = await r.json();
+        if (seq !== bookSeq) return;
+        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+
+        const byDate = {};
+        d.days.forEach(x => { byDate[x.date] = x; });
+        const first = new Date(d.as_of + 'T00:00:00Z');
+        const last = new Date(d.days[d.days.length - 1].date + 'T00:00:00Z');
+
+        // Render every month the window touches, and no more.
+        let html = '', cursor = new Date(Date.UTC(first.getUTCFullYear(),
+                                                  first.getUTCMonth(), 1));
+        const names = [];
+        while (cursor <= last) {
+            const y = cursor.getUTCFullYear(), m = cursor.getUTCMonth();
+            names.push(cursor.toLocaleDateString('en-GB',
+                { month: 'long', year: 'numeric', timeZone: 'UTC' }));
+            html += '<div class="calgrid" style="margin-bottom:14px">';
+            ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(
+                n => { html += '<div class="calhead">' + n + '</div>'; });
+            const startDow = (new Date(Date.UTC(y, m, 1)).getUTCDay() + 6) % 7;
+            for (let i = 0; i < startDow; i++) html += '<div class="cal void"></div>';
+            const dim = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+            for (let day = 1; day <= dim; day++) {
+                const iso = y + '-' + String(m + 1).padStart(2, '0') + '-'
+                    + String(day).padStart(2, '0');
+                const hit = byDate[iso];
+                if (!hit) {
+                    const dow = new Date(Date.UTC(y, m, day)).getUTCDay();
+                    const why = (dow === 0 || dow === 6) ? 'no market'
+                        : (iso <= d.as_of ? 'past' : 'beyond horizon');
+                    html += '<div class="cal out"><div class="d">' + day
+                        + '</div><div class="xt">' + why + '</div></div>';
+                    continue;
+                }
+                const cls = hit.verdict === 'BOOK' ? 'cal-book'
+                    : hit.verdict === 'AVOID' ? 'cal-avoid' : 'cal-watch';
+                const extra = hit.extra_cost_usd > 0
+                    ? '+$' + Math.round(hit.extra_cost_usd).toLocaleString()
+                    : 'cheapest';
+                html += '<div class="cal ' + cls + '"><div class="d">' + day
+                    + '</div><div class="vb">' + hit.verdict + '</div>'
+                    + '<div class="mv">' + pct(hit.expected_move_pct) + '</div>'
+                    + '<div class="xt">' + extra + '</div></div>';
+            }
+            html += '</div>';
+            cursor = new Date(Date.UTC(y, m + 1, 1));
+        }
+        cal.innerHTML = html;
+        document.getElementById('bk_month').textContent = names.join(' and ');
+
+        legend.innerHTML = 'Ranked from the close of <b>' + fmtDate(d.as_of)
+            + '</b>. <span class="tag t-good">BOOK</span> cheapest third, '
+            + '<span class="tag t-warn">WATCH</span> middle, '
+            + '<span class="tag t-bad">AVOID</span> dearest third — of the '
+            + d.days.length + ' days the model forecast.';
+
+        // The line that stops the colours being over-read. Computed, so
+        // it cannot drift away from the numbers it describes.
+        let scope = d.scope_note + '. ';
+        if (d.ranking_only) {
+            scope += 'The spread across the window is <b>' + nfix(d.spread_pct, 2)
+                + '%</b>, narrower than the typical ' + d.interval_pct
+                + '% interval on a single day (<b>' + nfix(d.typical_interval_pct, 1)
+                + '%</b>) — so these colours rank days by expectation. They do '
+                + '<b>not</b> establish that one day will be cheaper than another.';
+        }
+        document.getElementById('bk_scope').innerHTML = scope;
+
+        wait.innerHTML = d.days.map(x =>
+            '<tr><td>' + fmtDate(x.date) + ' <span style="opacity:.6">('
+            + x.horizon_days + 'd)</span></td>'
+            + '<td class="n">' + pct(x.expected_move_pct) + '</td>'
+            + '<td class="n">' + (x.worse_than_best_pct > 1e-9
+                ? '+' + nfix(x.worse_than_best_pct, 2) + '%' : '&mdash;') + '</td>'
+            + '<td class="n">' + (x.extra_cost_usd > 0
+                ? '$' + Math.round(x.extra_cost_usd).toLocaleString()
+                : '<span class="tag t-good">cheapest</span>') + '</td></tr>').join('');
+
+        const im = d.impact;
+        if (im) {
+            document.getElementById('bk_crore').textContent =
+                '\u20b9' + nfix(im.annual_crore, 2) + ' crore';
+            document.getElementById('bk_impact').innerHTML =
+                '<b>' + nfix(im.saved_pct, 2) + '%</b> of the freight rate per '
+                + 'fixture — measured here over 395 independent fixtures '
+                + '(p = ' + nfix(d.saved_p_value, 3) + ') — applied to <b>'
+                + nloc(im.tonnes_per_year) + '</b> tonnes a year at <b>$'
+                + nfix(im.rate_usd_per_t, 2) + '</b>/t, converted at USD/INR <b>'
+                + nfix(im.usd_inr, 2) + '</b> read from the panel on '
+                + fmtDate(d.usd_inr_as_of) + '. That is $'
+                + nfix(im.saved_usd_per_t, 3) + ' a tonne. '
+                + 'The tonnage and the rate are <b>yours</b>; the percentage and '
+                + 'the exchange rate are ours. It loses on <b>'
+                + nfix(d.lose_rate_pct, 0) + '%</b> of the weeks it acts and is '
+                + (d.beats_momentum ? '' : '<b>not</b> ')
+                + 'distinguishable from a momentum rule on money.';
+        }
+    } catch (e) {
+        if (seq !== bookSeq) return;
+        legend.textContent = e.message;
+        cal.innerHTML = '';
+        wait.innerHTML = '<tr><td colspan="4">' + rkEsc(e.message) + '</td></tr>';
+    }
+}
+
+async function loadSeasonal() {
+    const body = document.getElementById('bk_seas');
+    try {
+        const r = await fetchWithTimeout('/api/seasonal', 30000);
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        const TAG = { 'historically rises': 't-bad', 'historically falls': 't-good',
+                      'large, not proven': 't-warn', 'big swings, no direction': 't-mute',
+                      'in line': 't-mute' };
+        body.innerHTML = d.months.map(m =>
+            '<tr><td>' + rkEsc(m.name) + '</td>'
+            + '<td class="n">' + nloc(m.n_effective) + '</td>'
+            + '<td class="n" style="font-weight:700">' + pct(m.mean_move_pct) + '</td>'
+            + '<td class="n">' + nfix(m.up_share_pct, 1) + '%</td>'
+            + '<td class="n">' + (m.p_value < 0.001 ? '&lt;0.001' : nfix(m.p_value, 3))
+            + '</td><td><span class="tag ' + (TAG[m.verdict] || 't-mute') + '">'
+            + rkEsc(m.verdict) + '</span></td></tr>').join('');
+        const clear = d.months.filter(m => m.significant
+            && Math.abs(m.mean_move_pct) >= d.strong_threshold_pct);
+        const near = d.months.filter(m => m.verdict === 'large, not proven');
+        document.getElementById('bk_seasnote').innerHTML =
+            'The realised ' + d.horizon_days + '-day move by the month the decision '
+            + 'falls in, 2012&ndash;2026. <b>Descriptive, not a forecast</b> — this is '
+            + 'what past Septembers did, not what this one will. Overlapping windows '
+            + 'mean ' + nloc(d.n_total) + ' rows are far fewer observations, so every '
+            + 'test uses the effective count, and the p-values are adjusted for testing '
+            + 'twelve months. <b>' + clear.length + ' of ' + d.months.length
+            + '</b> clear that bar' + (clear.length ? ' (' + clear.map(m => m.name).join(', ')
+            + ')' : '') + (near.length ? '; ' + near.map(m => m.name).join(' and ')
+            + ' move as hard and miss it.' : '.');
+        document.getElementById('bk_cause').innerHTML =
+            '<b>Cause unknown.</b> ' + rkEsc(d.cause_note) + '.';
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="6">' + rkEsc(e.message) + '</td></tr>';
+        document.getElementById('bk_seasnote').textContent = '';
+    }
+}
+
 async function fillDates(dr) {
     const range = document.getElementById('dateRange');
     try {
@@ -1208,6 +1589,15 @@ async function fillDates(dr) {
             return;
         }
         const d = await dr.json();
+        // Read, not written. The static version of this sentence said
+        // "February 2018" after the range moved to 2015, and said
+        // "July 2015" on a machine where the licensed model had not
+        // been built. Prose about the data belongs in the data.
+        const rf = document.getElementById('replayFrom');
+        if (rf && d.min) {
+            rf.textContent = new Date(d.min + 'T00:00:00Z').toLocaleDateString(
+                'en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+        }
         const el = document.getElementById('date');
         el.value = fmtDate(d.max);
         const picker = document.getElementById('datePicker');
@@ -1914,7 +2304,7 @@ async function loadRisk() {
     document.getElementById('riskNote').textContent = d.note || '';
 }
 
-const VIEWS = ['timing','fleet','ports','risk','proof'];
+const VIEWS = ['timing','fleet','ports','risk','proof','booking'];
 function showView(name) {
     if (!VIEWS.includes(name)) name = 'timing';
     VIEWS.forEach(v => document.getElementById('v-'+v).classList.toggle('on', v === name));
@@ -1954,6 +2344,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     showView(location.hash.slice(1) || 'timing');
 
     loadAhead();
+    loadSeasonal();
+    loadBooking();
     await loadMetrics();
     loadCongestion();
     loadBallast();
@@ -1998,6 +2390,12 @@ window.addEventListener('DOMContentLoaded', async () => {
         const el = document.getElementById(id);
         if (el) { el.addEventListener('change', predict); el.addEventListener('input', predict); }
     });
+    const bookSoon = debounce(loadBooking, 400);
+    ['bk_parcel', 'bk_annual', 'bk_rate'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', bookSoon);
+    });
+
     const pt = document.getElementById('parcel_t');
     if (pt) { pt.addEventListener('change', portOptions); pt.addEventListener('input', portOptions); }
     predict();
