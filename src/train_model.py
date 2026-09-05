@@ -79,7 +79,7 @@ def conformal_quantile(residuals, alpha):
     return float(np.quantile(r, k / n, method='higher'))
 
 
-def folds(n):
+def folds(n, horizon=HORIZON):
     """The fold boundaries, as (k, te_lo, te_hi, tr_hi, cal_lo, fit_hi).
 
     Split out of walk_forward so the purge gap is something a test can
@@ -93,9 +93,12 @@ def folds(n):
       gap  HORIZON rows          purge
       test [te_lo : te_hi)       scored here
 
-    Both gaps are HORIZON wide because the target at row i is a function
-    of row i+HORIZON, so without them the last targets of one block are
-    computed from rows inside the next.
+    Both gaps are `horizon` wide because the target at row i is a
+    function of row i+horizon, so without them the last targets of one
+    block are computed from rows inside the next. It defaults to HORIZON
+    and is a parameter only so the forecast curve, which scores several
+    horizons, purges each by its own - a 10-day target purged by 5 would
+    leak five days of it into the next block.
     """
     start = int(n * 0.40)                     # first fold trains on 40%
     fold_size = (n - start) // N_FOLDS
@@ -103,12 +106,12 @@ def folds(n):
     for k in range(N_FOLDS):
         te_lo = start + k * fold_size
         te_hi = n if k == N_FOLDS - 1 else te_lo + fold_size
-        tr_hi = te_lo - HORIZON               # the purge gap
+        tr_hi = te_lo - horizon               # the purge gap
         if tr_hi < 100:
             continue
         # Carve a calibration tail off the training block for conformal.
         cal_lo = int(tr_hi * 0.85)
-        fit_hi = cal_lo - HORIZON
+        fit_hi = cal_lo - horizon
         out.append((k, te_lo, te_hi, tr_hi, cal_lo, fit_hi))
     return out
 

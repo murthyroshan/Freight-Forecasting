@@ -910,6 +910,70 @@ def _main():
           'ballast_caveat' in html)
 
 
+    print('\n[29] the forward card leads, and carries its own caveats')
+    check('the page asks for the forward curve',
+          "fetchWithTimeout('/api/forecast'" in html)
+    check('and the card sits above the historical replay',
+          html.index('aheadChart') < html.index('forecastChart'))
+    # The absence is the point. The replay chart has an Actual series
+    # because the outcome is known; drawing the same shape here would
+    # invite the eye to look for one that does not exist.
+    ahead = html[html.index('async function loadAhead'):
+                 html.index('async function fillDates')]
+    check('the forward chart has no "Actual" series, because there is no '
+          'outcome yet', "'Actual'" not in ahead, 'an Actual dataset')
+    check('it plots a conformal band, not a bare line',
+          'Upper ' in ahead and 'fill:' in ahead.replace(' ', ''))
+    check('every row shows the strength of that call',
+          'strength_pct' in ahead and 'stronger_than_usual' in ahead)
+    check('a weak call is labelled weak rather than left to look confident',
+          'weaker than usual' in ahead)
+    check('each horizon is shown against its OWN base rate, not a coin',
+          'base_rate_pct' in ahead)
+    check('the current year record travels with the forecast',
+          'current_year' in ahead and 'not beating' in ahead)
+    check('staleness is only called a problem past a day, because the '
+          'close for today has not published when the build runs',
+          'data_age_days >= 2' in ahead)
+    check('and the calendar caveat is not hidden from the reader',
+          'exchange holidays' in ahead)
+    # A card that fails leaves a tall empty canvas above its message
+    # unless the plot is collapsed with it, which reads as broken rather
+    # than as an instruction.
+    check('a failure collapses the empty chart and table',
+          'aheadPlot' in ahead and 'aheadTable' in ahead
+          and 'show(false)' in ahead)
+    check('and clears the caveat, so a stale one cannot outlive the '
+          'forecast it described', "caveat.textContent = ''" in ahead)
+    check('the header badge names the feed it dates, since port calls '
+          'publish weekly and the Baltic close daily',
+          'port calls &middot; week to' in html
+          or "'port calls · week to '" in html)
+
+    print('\n[30] the replay says why it starts where it starts')
+    # A reader looking at a panel that begins in 2012 and a picker that
+    # begins in 2018 will ask, and the honest answer is that the
+    # difference is the first training fold.
+    check('the replay card explains the 2018 start',
+          'February 2018' in html and '1,313' in html)
+    check('and says plainly what showing those years would be',
+          'own homework' in html)
+    check('the two cards are distinguishable: one has an outcome, one '
+          'does not',
+          'nothing here has happened yet' in html.lower()
+          and 'the outcome is known' in html.lower())
+
+    print('\n[31] el.hidden actually hides')
+    # .tag sets display:inline-flex, which beats the user agent's
+    # [hidden]{display:none}. The stale badge rendered as an empty pill
+    # until this rule existed, and .gl was one class away from the same.
+    check('there is a [hidden] rule that wins',
+          '[hidden]{display:none!important}' in html.replace(' ', ''))
+    for el in ('aheadStale', 'riskClearHead'):
+        check('%s is toggled with .hidden, which now works' % el,
+              el in html)
+
+
     if FAIL:
         print('  %d CHECK(S) FAILED:' % len(FAIL))
         for f in FAIL:

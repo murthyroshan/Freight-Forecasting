@@ -50,6 +50,7 @@ app = Flask(__name__)
 
 METRICS_PATH = os.path.join(paths.MODELS, 'metrics.json')
 PROCUREMENT_PATH = os.path.join(paths.MODELS, 'procurement.json')
+FORECAST_PATH = os.path.join(paths.MODELS, 'live_forecast.json')
 LIVE_PATH = os.path.join(paths.MODELS, 'live_metrics.json')
 OOS_PATH = os.path.join(paths.PROCESSED, 'oos_predictions.parquet')
 
@@ -61,6 +62,9 @@ MISSING = ('Artefact %s is missing. Run:  python -m src.fetch_data && '
 # change.
 MISSING_PROCUREMENT = ('Artefact %s is missing. Run:  '
                        'python -m src.train_model && python -m src.procurement')
+
+MISSING_FORECAST = ('Artefact %s is missing. Run:  '
+                    'python -m src.build_panel && python -m src.forecast')
 
 MISSING_LIVE = ('Artefact %s is missing. Run:  python -m src.fetch_data && '
                 'python -m src.live_model')
@@ -141,6 +145,7 @@ def _json_safe(obj):
 
 METRICS = _load_json(METRICS_PATH)
 PROCUREMENT = _load_json(PROCUREMENT_PATH)
+FORECAST = _load_json(FORECAST_PATH)
 LIVE = _load_json(LIVE_PATH)
 OOS = pd.read_parquet(OOS_PATH) if os.path.exists(OOS_PATH) else None
 if OOS is not None:
@@ -239,6 +244,21 @@ def api_metrics():
     if METRICS is None:
         return jsonify({'error': MISSING % METRICS_PATH}), 503
     return jsonify(_json_safe(METRICS))
+
+
+@app.route('/api/forecast')
+def api_forecast():
+    """The forward curve: 1 to 10 trading days out, from the newest close.
+
+    The only figure this API serves that cannot be checked against an
+    outcome, so the payload carries what makes it judgeable - the
+    conformal interval, where the call sits among every call the model
+    has made, and the current year's record - and the client is expected
+    to show them rather than the point estimate alone.
+    """
+    if FORECAST is None:
+        return jsonify({'error': MISSING_FORECAST % FORECAST_PATH}), 503
+    return jsonify(_json_safe(FORECAST))
 
 
 @app.route('/api/procurement')
