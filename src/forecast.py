@@ -56,10 +56,20 @@ from sklearn.preprocessing import StandardScaler
 
 from src import build_panel as bp, paths, train_model as tm
 
-# Business days ahead. 5 is the evaluated horizon and one calendar week;
-# 7 and 10 are what "the next week and a half" actually means; 1, 2 and
-# 3 are included because the decay is the interesting part.
-HORIZONS = (1, 2, 3, 5, 7, 10)
+# Every trading day out to a calendar month. 5 is the evaluated horizon
+# and one week; 21 trading days is about a month. Each gets its own
+# model and its own folds - the booking calendar needs a call for every
+# day it colours, and interpolating between horizons it never fitted
+# would be inventing the days in between, which is the whole problem
+# with the version this idea came from.
+#
+# Longer is not worse here, which is counter-intuitive and worth saying:
+# 21 days scores better than 5 (62.9% against 61.7%) because freight
+# cycles are slow and a month of trend is easier to call than a week of
+# noise. It stops at a month because the honest sample does: 21-day
+# windows leave about 93 independent observations, and 42-day windows
+# only 46, which is too few to publish however good it looks.
+HORIZONS = tuple(range(1, 22))
 
 MODEL = 'ridge'          # the model the rest of the dashboard reports
 ALPHA = tm.ALPHA         # -> 80% interval, same as everywhere else

@@ -59,8 +59,16 @@ def ret(s, n):
     return np.log(s / s.shift(n))
 
 
-def baltic():
+def baltic(licensed_only=False):
     """The Capesize/Panamax/Supramax series, spliced.
+
+    `licensed_only` stops at the Mendeley copy and never appends the
+    mirror. It exists because the two halves support two different
+    models: the licensed years are cleaner and score better, and for
+    the internal demo the replay uses that model where it can and the
+    extended one after. Passing the flag is the only way to get the
+    short series - there is no silent fallback that could produce one
+    by accident.
 
     The licensed Mendeley copy runs to 2019-07-31 and is used unchanged
     up to that date. Past it the series continues from the East Money
@@ -72,6 +80,8 @@ def baltic():
     """
     lic = load('baltic_indices').set_index('date').sort_index()
     cols = ['capesize', 'panamax', 'supramax']
+    if licensed_only:
+        return lic[cols]
     # A missing extension must be LOUD. Falling back silently gives a
     # 2019-only panel that looks perfectly normal - same columns, no
     # error - and every number downstream would quietly describe a
@@ -97,14 +107,14 @@ def baltic():
     return out
 
 
-def _frame():
+def _frame(licensed_only=False):
     """Every column, before anything is dropped.
 
     Split out of build() so a forecast for a day that has no outcome yet
     runs literally the same feature code as training, rather than a copy
     of it that can drift. build() is this plus the dropna it always did.
     """
-    bal = baltic()
+    bal = baltic(licensed_only)
 
     # Market series, aligned onto Baltic's trading calendar. Baltic
     # publishes on London business days; Yahoo series have their own
@@ -203,13 +213,13 @@ def feature_names(df):
     return [c for c in df.columns if c not in FEATURE_EXCLUDE]
 
 
-def build():
+def build(licensed_only=False):
     """The panel used for fitting and scoring.
 
     Warm-up rows (the 63-day windows) and the final HORIZON rows (no
     target yet) are dropped rather than imputed.
     """
-    return _frame().dropna()
+    return _frame(licensed_only).dropna()
 
 
 def features_asof(as_of=None):
