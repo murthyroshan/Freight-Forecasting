@@ -49,13 +49,13 @@ def load(name):
 
 
 def ret(s, n):
-    # Same guard as the target: a non-positive level has no log return.
-    s = s.where(s > 0) if (s <= 0).any() else s
     """n-period LOG return, ending at t. Uses no future data.
 
     Log for the same reason as the target: it keeps a move off a small
     base on the same scale as a move off a large one, so 2019 does not
     dominate every fitted coefficient."""
+    # Same guard as the target: a non-positive level has no log return.
+    s = s.where(s > 0) if (s <= 0).any() else s
     return np.log(s / s.shift(n))
 
 

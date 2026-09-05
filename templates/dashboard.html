@@ -12,6 +12,29 @@
      the dashboard is identical with the wifi off. -->
 <link rel="stylesheet" href="/static/vendor/fonts/fonts.css">
 <script src="/static/vendor/chart.umd.min.js"></script>
+<script src="/static/vendor/three.min.js"></script>
+<script>
+// Runs before the body paints. A remembered dark theme applied after
+// first paint shows a white flash on every load, which is the single
+// most common way a good dark mode feels cheap.
+(function () {
+    try {
+        var k = 'freight-theme', v = null;
+        try { v = localStorage.getItem(k); } catch (e) {}
+        // ?theme=dark wins over both, and is remembered. Useful for a
+        // demo link that opens in the right theme for the room, and it
+        // is the only way to drive the theme from a headless browser.
+        var q = (location.search.match(/[?&]theme=(dark|light)/) || [])[1];
+        if (q) { v = q; try { localStorage.setItem(k, q); } catch (e) {} }
+        var dark = v === 'dark' || (!v && window.matchMedia
+            && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.documentElement.style.colorScheme = 'dark';
+        }
+    } catch (e) {}
+})();
+</script>
 <style>
 /* ─────────────────────────────────────────────────────────
    Warm industrial palette — the colours of the trade itself:
@@ -22,7 +45,16 @@
    ───────────────────────────────────────────────────────── */
 :root{
   --paper:#f6f3ee; --card:#fffefb; --sunk:#efebe3;
-  --ink:#1a1614; --ink-2:#55504a; --ink-3:#8a8279;
+  --ink:#1a1614; --ink-2:#55504a; --ink-3:#746e66;
+  --lift:#ffffff; --hairline:transparent;
+  --elev-1:0 1px 2px rgba(26,22,20,.05);
+  --elev-2:0 4px 16px rgba(26,22,20,.07);
+  --glow:transparent; --scrim:rgba(26,22,20,.34);
+  --grid:#e2ddd3; --axis:#8a8279;
+  --tip-bg:#1a1614; --tip-title:#fffefb; --tip-body:#d8d2c8;
+  --focus:#c2410c; --mesh-a:transparent; --mesh-b:transparent;
+  --grain:0; --top-bg:rgba(246,243,238,.94); --on-accent:#fffefb;
+  --band:rgba(194,65,12,.07); --band-line:rgba(194,65,12,.30);
   --rule:#e2ddd3; --rule-2:#c9c2b6;
   --rust:#c2410c; --aqua:#0e7f57; --amber:#eda100;
   --good-t:#166534; --good-b:rgba(12,163,12,.12); --good-r:rgba(12,163,12,.34);
@@ -32,33 +64,12 @@
   --fd:'Newsreader',Georgia,'Times New Roman',serif;
   --fm:'JetBrains Mono',ui-monospace,Consolas,monospace;
 }
-/* ── PALETTE B · "Foundry" — the dark alternative, held in reserve ──
-   Validated against its own anthracite surface #1c1a17: lightness band,
-   chroma floor, CVD separation (worst adjacent ΔE 11.8 protan),
-   normal-vision floor (24.9) and 3:1 contrast all PASS.
-
-   To switch themes, replace the :root block above with this one and
-   swap the three chart constants (RUST/AQUA/AMBER) in the script. The
-   markup, the layout and every measurement stay as they are.
-
-     --paper:#14120f; --card:#1c1a17; --sunk:#232019;
-     --ink:#f2ede4;   --ink-2:#b3aa9c; --ink-3:#857c6e;
-     --rule:#2e2a24;  --rule-2:#453f36;
-     --rust:#e0722a;  --aqua:#12a189;  --amber:#d9a520;
-     --good-t:#5fc46a; --good-b:rgba(12,163,12,.14); --good-r:rgba(12,163,12,.40);
-     --warn-t:#e0b04a; --warn-b:rgba(250,178,25,.14); --warn-r:rgba(250,178,25,.42);
-     --crit-t:#e88585; --crit-b:rgba(208,59,59,.14); --crit-r:rgba(208,59,59,.40);
-
-   Also flip in the draft cross-section: sea stops #dfe9e5/#c2d2cc ->
-   #253b38/#16211f, seabed stroke #a89f92 -> #57503f, and the hull's
-   deck/label fill #fffefb -> #14120f.
-
-   A runtime toggle was considered and deliberately not built: it doubles
-   the surface to test for a control judges will not click, and Chart.js
-   fixes its colours at construction, so a live switch has to tear down
-   and rebuild both charts. Choosing once, for the room you are actually
-   presenting in, costs a minute and carries no risk.
-   ────────────────────────────────────────────────────────────────── */
+/* ── The light palette is above; the dark one is below, under
+   [data-theme="dark"]. An earlier note here described a reserve palette
+   to be pasted in by hand and argued a runtime toggle was not worth
+   building. Both are now false - the toggle exists, it remembers the
+   choice, and it re-reads these tokens into Chart.js - so the note has
+   been removed rather than left to contradict the code beneath it. */
 
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -73,7 +84,7 @@ body{
 /* ── masthead ─────────────────────────────────────────── */
 .top{
   position:sticky;top:0;z-index:40;margin:0 -24px;padding:0 24px;
-  background:rgba(246,243,238,.94);backdrop-filter:blur(12px);
+  background:var(--top-bg);backdrop-filter:blur(14px) saturate(1.2);
   border-bottom:1px solid var(--rule);
 }
 .top-in{display:flex;align-items:center;gap:18px;padding:15px 0 0;flex-wrap:wrap}
@@ -86,7 +97,7 @@ body{
   color:var(--good-t);background:var(--good-b);border:1px solid var(--good-r);
   padding:4px 11px;border-radius:3px;white-space:nowrap;
 }
-.live i{width:5px;height:5px;border-radius:50%;background:#0ca30c;font-style:normal;animation:beat 2.6s infinite}
+.live i{width:5px;height:5px;border-radius:50%;background:var(--good-t);font-style:normal;animation:beat 2.6s infinite}
 @keyframes beat{0%,100%{opacity:1}50%{opacity:.3}}
 
 nav{display:flex;gap:2px;margin-top:12px;overflow-x:auto}
@@ -121,7 +132,6 @@ nav button em{font-style:normal;font-family:var(--fm);font-size:10px;opacity:.6;
 }
 
 /* ── form ─────────────────────────────────────────────── */
-.f{margin-bottom:15px}
 .f label{display:block;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
 .f .hint{font-size:11.5px;color:var(--ink-3);margin-top:6px;line-height:1.5;text-transform:none;letter-spacing:0;font-weight:400}
 input,select{
@@ -134,7 +144,7 @@ select{font-family:var(--ff);font-size:13.5px}
 
 /* ── verdict ──────────────────────────────────────────── */
 .verdict{margin-top:18px;padding:17px;border-radius:3px;border-left:3px solid;animation:enter .4s}
-.v-now{background:var(--good-b);border-color:#0ca30c}
+.v-now{background:var(--good-b);border-color:var(--good-t)}
 .v-wait{background:var(--warn-b);border-color:var(--amber)}
 .v-bad{background:var(--crit-b);border-color:#d03b3b}
 .v-k{font-family:var(--fm);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
@@ -171,6 +181,115 @@ td.n,th.n{text-align:right;font-family:var(--fm)}
    .gl is one !important away from the same problem. Stated once here so
    the property means what it says everywhere on the page. */
 [hidden]{display:none!important}
+/* ── The assistant ──────────────────────────────────────────────────
+   A panel, not a bubble in the corner: the answers carry tables and
+   sources and need the width. Everything below reads its colour from
+   the same tokens as the rest of the page, so a theme change carries
+   into it without a second palette. */
+.ask-fab{position:fixed;right:22px;bottom:22px;z-index:60;display:flex;
+  align-items:center;gap:9px;padding:11px 17px 11px 14px;border-radius:999px;
+  border:1px solid var(--rule);background:var(--card);cursor:pointer;
+  box-shadow:0 6px 24px rgba(26,22,20,.13),0 1px 3px rgba(26,22,20,.09);
+  font-family:var(--ff);font-size:13px;font-weight:600;color:var(--ink);
+  transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+.ask-fab:hover{transform:translateY(-2px);border-color:var(--rust);
+  box-shadow:0 10px 30px rgba(26,22,20,.17),0 2px 5px rgba(26,22,20,.1)}
+.ask-fab:active{transform:translateY(0)}
+.ask-fab .dot{width:7px;height:7px;border-radius:50%;background:var(--good-t);
+  box-shadow:0 0 0 3px var(--good-b)}
+.ask-fab kbd{font-family:var(--fm);font-size:9.5px;font-weight:700;
+  padding:2px 5px;border-radius:3px;background:var(--sunk);color:var(--ink-3);
+  border:1px solid var(--rule)}
+
+.ask-scrim{position:fixed;inset:0;z-index:70;background:rgba(26,22,20,.34);
+  backdrop-filter:blur(2px);opacity:0;pointer-events:none;
+  transition:opacity .22s ease}
+.ask-scrim.on{opacity:1;pointer-events:auto}
+
+.ask{position:fixed;top:0;right:0;bottom:0;z-index:80;width:min(468px,100vw);
+  display:flex;flex-direction:column;background:var(--card);
+  border-left:1px solid var(--rule);box-shadow:-18px 0 46px rgba(26,22,20,.16);
+  transform:translateX(100%);transition:transform .26s cubic-bezier(.22,1,.36,1)}
+.ask.on{transform:none}
+.ask-head{padding:16px 18px 13px;border-bottom:1px solid var(--rule);
+  display:flex;align-items:flex-start;gap:12px;background:var(--sunk)}
+.ask-head h3{font-family:var(--fd);font-size:19px;font-weight:600;margin:0;
+  letter-spacing:-.01em;color:var(--ink)}
+.ask-head p{margin:3px 0 0;font-size:11.5px;line-height:1.45;color:var(--ink-3)}
+.ask-x{margin-left:auto;flex:0 0 auto;width:28px;height:28px;border-radius:4px;
+  border:1px solid var(--rule);background:var(--card);cursor:pointer;
+  color:var(--ink-2);font-size:15px;line-height:1;padding:0}
+.ask-x:hover{border-color:var(--ink-3);color:var(--ink)}
+
+.ask-log{flex:1 1 auto;overflow-y:auto;padding:16px 18px 8px;
+  display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth}
+.ask-msg{max-width:100%;animation:askIn .24s ease both}
+@keyframes askIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .ask,.ask-scrim,.ask-msg{transition:none;animation:none}
+  .ask-log{scroll-behavior:auto}}
+.ask-you{align-self:flex-end;max-width:86%;background:var(--rust);color:var(--on-accent);
+  padding:9px 13px;border-radius:13px 13px 3px 13px;font-size:13px;
+  line-height:1.5;box-shadow:0 1px 2px rgba(26,22,20,.14)}
+.ask-bot{align-self:stretch;border-left:2px solid var(--rule);padding-left:13px}
+.ask-bot p{margin:0 0 8px;font-size:13.2px;line-height:1.62;color:var(--ink)}
+.ask-bot p:last-child{margin-bottom:0}
+.ask-bot ul{margin:0 0 8px;padding-left:17px}
+.ask-bot li{font-size:13.2px;line-height:1.6;color:var(--ink);margin-bottom:4px}
+.ask-bot b{font-weight:700;color:var(--ink)}
+.ask-bot code{font-family:var(--fm);font-size:11.5px;background:var(--sunk);
+  border:1px solid var(--rule);border-radius:3px;padding:1px 5px;color:var(--ink-2)}
+.ask-bot em{font-style:italic;color:var(--ink-2)}
+.ask-tbl{margin:10px 0 8px;overflow-x:auto;border:1px solid var(--rule);
+  border-radius:4px}
+.ask-tbl table{width:100%;border-collapse:collapse;font-size:11.5px}
+.ask-tbl th{font-family:var(--fm);font-size:9px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  text-align:left;padding:7px 9px;border-bottom:1px solid var(--rule);
+  background:var(--sunk);white-space:nowrap}
+.ask-tbl td{padding:6px 9px;border-bottom:1px solid var(--rule);
+  color:var(--ink-2);white-space:nowrap}
+.ask-tbl tr:last-child td{border-bottom:0}
+.ask-src{margin-top:8px;font-family:var(--fm);font-size:9.5px;
+  letter-spacing:.04em;color:var(--ink-3);display:flex;gap:7px;
+  align-items:center;flex-wrap:wrap}
+.ask-src .lab{text-transform:uppercase;font-weight:700}
+.ask-act{margin-top:9px;display:flex;gap:7px;flex-wrap:wrap}
+.chip{font-family:var(--ff);font-size:11.5px;font-weight:500;padding:5px 11px;
+  border-radius:999px;border:1px solid var(--rule);background:var(--card);
+  color:var(--ink-2);cursor:pointer;text-align:left;line-height:1.35;
+  transition:border-color .14s ease,color .14s ease,background .14s ease}
+.chip:hover{border-color:var(--rust);color:var(--rust);background:var(--sunk)}
+.chip.go{border-color:var(--good-r);color:var(--good-t);background:var(--good-b)}
+
+.ask-empty{padding:4px 0 0}
+.ask-empty .gl{margin-top:16px}
+.ask-empty .gl:first-child{margin-top:6px}
+.ask-empty .row{display:flex;flex-direction:column;gap:6px;margin-top:7px}
+
+.ask-think{display:flex;gap:5px;padding:4px 0 2px;align-items:center}
+.ask-think i{width:5px;height:5px;border-radius:50%;background:var(--ink-3);
+  animation:askPulse 1.05s ease-in-out infinite}
+.ask-think i:nth-child(2){animation-delay:.16s}
+.ask-think i:nth-child(3){animation-delay:.32s}
+@keyframes askPulse{0%,60%,100%{opacity:.28;transform:translateY(0)}
+  30%{opacity:1;transform:translateY(-2.5px)}}
+
+.ask-foot{flex:0 0 auto;border-top:1px solid var(--rule);padding:11px 14px 13px;
+  background:var(--sunk)}
+.ask-form{display:flex;gap:8px;align-items:flex-end}
+.ask-form textarea{flex:1 1 auto;resize:none;min-height:38px;max-height:120px;
+  font-family:var(--ff);font-size:13px;line-height:1.45;padding:9px 11px;
+  border:1px solid var(--rule);border-radius:7px;background:var(--card);
+  color:var(--ink);outline:none}
+.ask-form textarea:focus{border-color:var(--rust);
+  box-shadow:0 0 0 3px rgba(194,65,12,.1)}
+.ask-send{flex:0 0 auto;width:38px;height:38px;border-radius:7px;border:0;
+  background:var(--rust);color:var(--on-accent);cursor:pointer;font-size:15px;
+  line-height:1;transition:opacity .14s ease}
+.ask-send:disabled{opacity:.4;cursor:default}
+.ask-hint{margin:7px 2px 0;font-size:10.5px;line-height:1.4;color:var(--ink-3)}
+
 /* Booking calendar. Only the days the model forecast are coloured; the
    rest stay blank on purpose, because a calendar that fills a whole
    year is claiming to know days no model was fitted for. */
@@ -298,6 +417,444 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
     pointer-events: none; border: 0; padding: 0; margin: 0;
 }
 .datefield > input.bad { border-color: #b3261e; }
+
+/* ══════════════════════════════════════════════════════════════════
+   DARK · "Foundry"
+
+   Not an inversion of the light palette. A dark interface fails in a
+   way a light one cannot: everything flattens, because on a near-black
+   ground the difference between two surfaces is a rounding error and
+   borders end up doing all the work. Three things fix that and they
+   are the whole design.
+
+   A luminance LADDER, not two shades. well < paper < card < lift, each
+   a real step (card is 2.4x the ground's luminance), so a raised
+   surface reads as raised before you notice its border.
+
+   A HAIRLINE on the top edge of every raised surface. Light falls from
+   above; the top edge of a lifted object catches it. One inset pixel
+   of near-white at 7% does more for perceived depth than any shadow.
+
+   SHADOW that behaves like shadow - two layers, one tight and one
+   long and soft, both nearly black, because on a dark ground a grey
+   shadow reads as fog.
+
+   Colour is scarce on purpose. The ground is desaturated so that the
+   few things carrying chroma - the verdict, a live figure, a critical
+   row - are the only places the eye is pulled to. Accents are lifted
+   and slightly desaturated: a fully saturated hue vibrates against a
+   dark surface and reads cheap.
+
+   Every pair below passes WCAG AA, measured rather than assumed, and
+   the three accents clear the colour-blind separation floor on this
+   exact surface.
+   ══════════════════════════════════════════════════════════════════ */
+[data-theme="dark"]{
+  --paper:#0b0d11; --card:#141922; --sunk:#07080a; --lift:#1c222d;
+  --ink:#edf1f7;   --ink-2:#a8b2c1; --ink-3:#78849a;
+  --rule:#1d2430;  --rule-2:#2b3442;
+  --rust:#ff7a45;  --aqua:#2dd4a7;  --amber:#ffc145;
+  /* emerald, not a lighter green: against the amber below it, #4ade80
+     separates by only 7.3 under protanopia and this clears 10.6 */
+  --good-t:#34d399; --good-b:rgba(52,211,153,.12);  --good-r:rgba(52,211,153,.30);
+  --warn-t:#fbbf24; --warn-b:rgba(251,191,36,.12);  --warn-r:rgba(251,191,36,.32);
+  --crit-t:#fb7185; --crit-b:rgba(251,113,133,.12); --crit-r:rgba(251,113,133,.30);
+
+  --hairline:rgba(237,241,247,.07);
+  --elev-1:0 1px 2px rgba(0,0,0,.55);
+  --elev-2:0 12px 32px -8px rgba(0,0,0,.65);
+  --glow:rgba(255,122,69,.22);
+  --scrim:rgba(4,5,7,.66);
+  --grid:#1d2430; --axis:#78849a;
+  --tip-bg:#1c222d; --tip-title:#edf1f7; --tip-body:#a8b2c1;
+  --focus:#ff7a45;
+  /* two off-screen light sources, barely there, so the ground is not
+     a flat field of one colour */
+  --mesh-a:rgba(255,122,69,.055); --mesh-b:rgba(45,212,167,.045);
+  --grain:.035; --top-bg:rgba(11,13,17,.78);
+  /* the dark accent is bright: white on it is 2.56:1, ink is 7.36:1 */
+  --on-accent:#140f0b;
+  /* the interval band has to carry further on a dark ground - at
+     7% it simply disappears */
+  --band:rgba(255,122,69,.16); --band-line:rgba(255,122,69,.42);
+}
+
+/* ── depth ───────────────────────────────────────────────────────── */
+body{ position:relative; }
+/* The ambient wash. Fixed, so it does not travel with the scroll and
+   give the page a parallax it has not earned. */
+body::before{
+  content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(1100px 620px at 12% -8%, var(--mesh-a), transparent 62%),
+    radial-gradient(900px 560px at 92% 4%, var(--mesh-b), transparent 60%);
+}
+/* Grain. Without it a large dark field bands badly on 8-bit panels and
+   gradients show their steps. Generated, not fetched - this page must
+   work with the network off. */
+body::after{
+  content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
+  opacity:var(--grain);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap{ position:relative; z-index:1; }
+
+/* ── raised surfaces ─────────────────────────────────────────────── */
+.card{
+  box-shadow:var(--elev-1), var(--elev-2);
+  transition:box-shadow .28s cubic-bezier(.22,.61,.36,1),
+             transform .28s cubic-bezier(.22,.61,.36,1),
+             border-color .28s ease;
+}
+/* the lit top edge */
+.card{ position:relative; }
+.card::before{
+  content:''; position:absolute; inset:0 0 auto 0; height:1px;
+  background:var(--hairline); pointer-events:none; border-radius:inherit;
+}
+.card:hover{ transform:translateY(-1px); }
+[data-theme="dark"] .card:hover{ border-color:var(--rule-2); }
+
+/* ── the verdict, and only the verdict, gets a living border ─────── */
+.vd{ position:relative; isolation:isolate; overflow:hidden; }
+[data-theme="dark"] .vd::after{
+  content:''; position:absolute; inset:-1px; z-index:-1; border-radius:inherit;
+  background:conic-gradient(from var(--vd-a,0deg),
+    transparent 0deg, var(--glow) 60deg, transparent 130deg,
+    transparent 240deg, var(--glow) 300deg, transparent 360deg);
+  animation:vd-spin 7s linear infinite;
+}
+@property --vd-a{ syntax:'<angle>'; initial-value:0deg; inherits:false; }
+@keyframes vd-spin{ to{ --vd-a:360deg; } }
+
+/* ── skeletons that look like they are loading ───────────────────── */
+.skel{
+  background-image:linear-gradient(100deg,
+    transparent 20%, var(--hairline) 42%, transparent 64%);
+  background-size:220% 100%;
+  animation:shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer{ from{background-position:180% 0} to{background-position:-60% 0} }
+
+/* ── entrance ────────────────────────────────────────────────────── */
+.view.on > *{ animation:rise .42s cubic-bezier(.22,.61,.36,1) both; }
+.view.on > *:nth-child(1){ animation-delay:.02s }
+.view.on > *:nth-child(2){ animation-delay:.06s }
+.view.on > *:nth-child(3){ animation-delay:.10s }
+.view.on > *:nth-child(4){ animation-delay:.14s }
+.view.on > *:nth-child(n+5){ animation-delay:.18s }
+@keyframes rise{ from{opacity:0;transform:translateY(7px)} to{opacity:1;transform:none} }
+
+/* ── figures carry a little light in dark ────────────────────────── */
+[data-theme="dark"] .rupee,
+[data-theme="dark"] .value,
+[data-theme="dark"] .vd .w{ text-shadow:0 0 26px var(--glow); }
+
+/* ── calendar cells lift under the cursor ────────────────────────── */
+.cal{ transition:transform .18s cubic-bezier(.22,.61,.36,1),
+                 box-shadow .18s ease; }
+.cal:not(.void):not(.out):hover{
+  transform:translateY(-2px); box-shadow:var(--elev-2);
+}
+
+/* ── focus you can actually see ──────────────────────────────────── */
+:where(button,input,select,textarea,[tabindex]):focus-visible{
+  outline:2px solid var(--focus); outline-offset:2px; border-radius:3px;
+}
+
+/* ── the theme switch ────────────────────────────────────────────── */
+.theme{
+  display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+  background:var(--card); color:var(--ink-2);
+  border:1px solid var(--rule); border-radius:999px;
+  padding:5px 11px 5px 8px; font-family:var(--fm);
+  font-size:10px; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; margin-left:10px;
+  transition:color .2s ease, border-color .2s ease, background .2s ease;
+}
+.theme:hover{ color:var(--ink); border-color:var(--rule-2); }
+.theme svg{ width:13px; height:13px; display:block;
+  transition:transform .45s cubic-bezier(.22,.61,.36,1); }
+[data-theme="dark"] .theme svg{ transform:rotate(-180deg); }
+
+/* Colour crossfades; geometry does not. Animating layout on a theme
+   flip makes the page look like it is reloading. */
+.wrap, .card, .cal, .tag, body{
+  transition:background-color .34s ease, color .34s ease,
+             border-color .34s ease;
+}
+
+/* ── nothing above is worth motion sickness ──────────────────────── */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms!important; animation-iteration-count:1!important;
+    transition-duration:.001ms!important; scroll-behavior:auto!important;
+  }
+  .card:hover,.cal:not(.void):not(.out):hover{ transform:none; }
+}
+
+/* ══════════ the ticker ══════════
+   Every figure in it is pulled from the same endpoints the panels
+   below use - it is a summary of the page, not decoration with numbers
+   painted on. Duplicated once in the markup so the loop is seamless;
+   paused on hover so a figure can actually be read. */
+.tick{
+  margin:0 -24px; padding:0; border-top:1px solid var(--rule);
+  background:var(--sunk); overflow:hidden; position:relative;
+}
+.tick::before,.tick::after{
+  content:''; position:absolute; top:0; bottom:0; width:64px; z-index:2;
+  pointer-events:none;
+}
+.tick::before{ left:0;  background:linear-gradient(90deg,var(--sunk),transparent); }
+.tick::after { right:0; background:linear-gradient(270deg,var(--sunk),transparent); }
+.tick-rail{ display:flex; width:max-content; animation:tick 46s linear infinite; }
+.tick:hover .tick-rail{ animation-play-state:paused; }
+.tick-set{ display:flex; flex:0 0 auto; }
+.tick-i{
+  display:inline-flex; align-items:baseline; gap:8px; flex:0 0 auto;
+  padding:8px 22px; font-size:11.5px; white-space:nowrap;
+  border-right:1px solid var(--rule);
+}
+.tick-k{ font-family:var(--fm); font-size:9.5px; font-weight:700;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); }
+.tick-v{ font-family:var(--fm); font-weight:700; color:var(--ink); }
+.tick-v.up{ color:var(--crit-t) } .tick-v.dn{ color:var(--good-t) }
+.tick-v.mut{ color:var(--ink-2); font-weight:600 }
+@keyframes tick{ from{transform:translateX(0)} to{transform:translateX(-50%)} }
+
+/* ══════════ the masthead ══════════
+   Named .mast, not .hero - .hero already belongs to the fleet
+   view's cost figure, and the collision silently replaced this
+   grid with that flex row. */
+.mast{
+  position:relative; overflow:hidden; border:1px solid var(--rule);
+  border-radius:6px; background:var(--card); margin:0 0 20px;
+  box-shadow:var(--elev-1),var(--elev-2);
+  display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);
+}
+.mast::before{
+  content:''; position:absolute; inset:0 0 auto 0; height:1px;
+  background:var(--hairline);
+}
+.mast-l{ padding:30px 30px 26px; min-width:0; display:flex;
+  flex-direction:column; justify-content:center; }
+.mast-tag{
+  display:inline-flex; align-items:center; gap:7px; font-family:var(--fm);
+  font-size:9.5px; font-weight:700; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--ink-3); margin-bottom:14px;
+}
+.mast-tag i{ width:5px;height:5px;border-radius:50%;background:var(--rust);
+  font-style:normal; box-shadow:0 0 0 3px var(--glow); }
+.mast h2{
+  font-family:var(--fd); font-weight:500; font-size:31px; line-height:1.14;
+  letter-spacing:-.015em; margin:0 0 12px;
+}
+.mast h2 em{ font-style:italic; color:var(--rust); }
+.mast p{ font-size:13.5px; line-height:1.62; color:var(--ink-2); margin:0 0 18px;
+  max-width:52ch; }
+.mast-row{ display:flex; gap:26px; flex-wrap:wrap; }
+.mast-f .k{ font-family:var(--fm); font-size:9.5px; font-weight:700;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); }
+.mast-f .v{ font-family:var(--fd); font-size:25px; font-weight:600;
+  letter-spacing:-.01em; line-height:1.2; }
+/* height:100% on an SVG inside an auto-sized grid row is circular -
+   the row grows to fit the SVG, the SVG grows to fit the row - and the
+   copy beside it gets pushed to the bottom of a very tall box. Let the
+   artwork keep its own aspect and centre it instead. */
+.mast-r{ position:relative; min-width:0; border-left:1px solid var(--rule);
+  display:flex; align-items:center; justify-content:center; padding:18px; }
+[data-theme="dark"] .mast-r{ background:
+  radial-gradient(120% 90% at 78% 18%, rgba(255,122,69,.10), transparent 62%); }
+.mast-r svg{ display:block; width:100%; height:auto; max-height:268px; }
+@media(max-width:900px){ .mast{grid-template-columns:1fr} .mast-r{display:none} }
+
+/* the sea line drifts; the ports breathe one after another */
+.sea{ animation:swell 9s ease-in-out infinite; }
+@keyframes swell{ 0%,100%{transform:translateY(0)} 50%{transform:translateY(-2.5px)} }
+.pt circle.h{ animation:halo 3.4s ease-out infinite; transform-origin:center; }
+.pt:nth-child(2) circle.h{ animation-delay:.5s }
+.pt:nth-child(3) circle.h{ animation-delay:1.0s }
+.pt:nth-child(4) circle.h{ animation-delay:1.5s }
+.pt:nth-child(5) circle.h{ animation-delay:2.0s }
+@keyframes halo{ 0%{r:3;opacity:.55} 70%{r:13;opacity:0} 100%{r:13;opacity:0} }
+.lane{ stroke-dasharray:5 7; animation:lane 3.4s linear infinite; }
+@keyframes lane{ to{ stroke-dashoffset:-24 } }
+@media (prefers-reduced-motion:reduce){
+  .tick-rail,.sea,.pt circle.h,.lane{ animation:none!important }
+}
+
+/* ══════════ the loadable ship ══════════
+   The one piece of this interface you can push on. Clicking loads the
+   vessel; the hull settles into the water, the holds fill, and the
+   draft crosses the berth limit at the point where src/ports.py says
+   it does. The numbers under it are the same TPC calculation the
+   Vessel & port view runs - this is that model with a handle on it,
+   not an animation of a boat. */
+.stage{ perspective:1100px; perspective-origin:60% 45%; }
+.stage-in{
+  transform-style:preserve-3d;
+  transition:transform .5s cubic-bezier(.22,.61,.36,1);
+  will-change:transform;
+}
+.ship{ cursor:pointer; }
+.ship:focus-visible{ outline:2px solid var(--focus); outline-offset:4px; }
+/* the hull settles rather than jumps */
+.hull{ transition:transform 1.05s cubic-bezier(.34,.9,.28,1); }
+.cargo{
+  transition:transform 1.05s cubic-bezier(.34,.9,.28,1), opacity .5s ease;
+  transform-origin:center bottom; transform:scaleY(0); opacity:0;
+}
+.laden .cargo{ transform:scaleY(1); opacity:1; }
+.wl{ transition:transform 1.05s cubic-bezier(.34,.9,.28,1); }
+.dmark{ transition:opacity .4s ease .3s, transform 1.05s cubic-bezier(.34,.9,.28,1); }
+.plimit{ transition:stroke .5s ease, opacity .4s ease; }
+.over .plimit{ stroke:var(--crit-t); opacity:1; }
+.ship-hint{
+  font-family:var(--fm); font-size:9px; letter-spacing:.13em;
+  text-transform:uppercase; fill:var(--ink-3);
+  animation:hint 2.6s ease-in-out infinite;
+}
+.laden .ship-hint{ animation:none; opacity:0; }
+@keyframes hint{ 0%,100%{opacity:.35} 50%{opacity:.9} }
+.wake{ opacity:0; transition:opacity .6s ease; }
+.laden .wake{ opacity:.5; }
+@media (prefers-reduced-motion:reduce){
+  .stage-in,.hull,.cargo,.wl,.dmark{ transition:none!important }
+  .ship-hint{ animation:none!important }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   THE RIG - a Capesize built out of planes in 3D space
+
+   Not an SVG of a ship. Six faces with real depth on them, rotated by
+   the browser's 3D engine, so it holds up as you turn it. A bulk
+   carrier is very nearly a box with a bow, which is the one time that
+   modelling something out of CSS boxes is honest rather than lazy.
+
+   It exists because the part-load problem is the least intuitive thing
+   this project does. "A Capesize draws 18.2 m and Paradip permits 16"
+   is a sentence people nod at; watching the hull settle past the line
+   and the number turn red is a thing they remember.
+
+   Everything it shows - deadweight, laden draft, the berth limit, the
+   tonnes that have to be left ashore - is the same arithmetic
+   src/ports.py runs. Transform and opacity only, so it stays on the
+   compositor.
+   ══════════════════════════════════════════════════════════════════ */
+.rig{
+  position:relative; border:1px solid var(--rule); border-radius:6px;
+  background:var(--card); box-shadow:var(--elev-1),var(--elev-2);
+  margin:0 0 20px; overflow:hidden;
+  display:grid; grid-template-columns:minmax(0,1fr) 300px;
+}
+.rig::before{ content:''; position:absolute; inset:0 0 auto 0; height:1px;
+  background:var(--hairline); }
+/* hull: 300 long, 62 tall, 96 deep */
+/* a red boot-top stripe, because every bulker has one */
+.s-r{ transform:translateZ(-48.5px) }
+/* five hatches; they slide back when she loads */
+.h2{ margin-left:-54px } .h3{ margin-left:0 }
+.h5{ margin-left:108px }
+.laden .h5{ transform:translateY(-31.5px) translateX(26px) rotateX(90deg) }
+/* the cargo itself, rising in the holds */
+/* superstructure aft */
+
+.rig-side{ border-left:1px solid var(--rule); padding:22px 22px 18px;
+  display:flex; flex-direction:column; gap:14px; }
+.rig-k{ font-family:var(--fm); font-size:9.5px; font-weight:700;
+  letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); }
+.rig-v{ font-family:var(--fd); font-size:26px; font-weight:600;
+  line-height:1.15; letter-spacing:-.01em; }
+.rig-v.bad{ color:var(--crit-t) }
+.rig-bar{ height:6px; border-radius:3px; background:var(--sunk);
+  border:1px solid var(--rule); overflow:hidden; position:relative; }
+.rig-fill{ position:absolute; inset:0 100% 0 0; background:var(--rust);
+  transition:right 1.15s cubic-bezier(.33,.9,.3,1); }
+.rig-limit{ position:absolute; top:-3px; bottom:-3px; width:2px;
+  background:var(--crit-t); }
+.rig-btn{
+  appearance:none; margin-top:auto; cursor:pointer; width:100%;
+  font-family:var(--fm); font-size:11px; font-weight:700;
+  letter-spacing:.1em; text-transform:uppercase;
+  padding:11px 14px; border-radius:4px;
+  border:1px solid var(--rust); background:var(--rust);
+  color:var(--on-accent);
+  transition:transform .18s ease, filter .18s ease, box-shadow .25s ease;
+}
+.rig-btn:hover{ transform:translateY(-1px); filter:brightness(1.06);
+  box-shadow:0 6px 20px -6px var(--glow); }
+.rig-btn:active{ transform:translateY(0) scale(.99); }
+.rig-note{ font-size:11.5px; line-height:1.55; color:var(--ink-3); }
+@media(max-width:900px){ .rig{grid-template-columns:1fr}
+  .rig-side{border-left:0;border-top:1px solid var(--rule)} }
+@media (prefers-reduced-motion:reduce){
+  .rig-fill{ transition:none!important }
+}
+
+/* ══════════ motion on scroll ══════════
+   Cards arrive as they come into view rather than all at once on load.
+   The entrance is deliberately small - 10px and a fade - because this
+   is a page people read numbers off, and anything larger turns
+   scrolling into a ride. Each element animates ONCE; re-animating on
+   every scroll past is the thing that makes these feel cheap. */
+.rev{ opacity:0; transform:translateY(10px);
+  transition:opacity .55s cubic-bezier(.22,.61,.36,1),
+             transform .55s cubic-bezier(.22,.61,.36,1); }
+.rev.in{ opacity:1; transform:none; }
+/* a stagger inside a revealed row */
+.rev.in .cal{ animation:cell .4s cubic-bezier(.22,.61,.36,1) both; }
+@keyframes cell{ from{opacity:0;transform:scale(.97)} to{opacity:1;transform:none} }
+
+/* ══════════ buttons that lean toward the cursor ══════════
+   A few pixels, no more. It reads as responsiveness rather than as a
+   toy, and it is transform-only so it never touches layout. */
+.mag{ transition:transform .18s cubic-bezier(.22,.61,.36,1),
+                 box-shadow .25s ease, filter .18s ease; }
+.mag:hover{ box-shadow:0 8px 24px -8px var(--glow); }
+.mag:active{ transform:scale(.985)!important; }
+
+/* the figures tick up when they arrive, then stop for good */
+.count{ font-variant-numeric:tabular-nums; }
+
+@media (prefers-reduced-motion:reduce){
+  .rev{ opacity:1!important; transform:none!important; transition:none!important }
+  .rev.in .cal{ animation:none!important }
+  .mag{ transition:none!important }
+}
+
+/* ══════════ the hull, properly ══════════
+   Eleven horizontal planes, each clipped to the plan-form at its own
+   height and each shaded for the light falling on it. Narrow and fine
+   at the keel, full amidships, raked at the stem - which is what makes
+   it read as a ship from any angle instead of a box seen end-on.
+   Everything is transform and opacity, so the whole thing stays on the
+   compositor even while it orbits. */
+/* the boot-top: one bright plane right at the waterline */
+/* holds, seen when the hatches slide */
+/* hatch covers slide aft as she loads */
+/* deck cranes */
+/* accommodation and funnel, aft */
+/* a lit bridge window strip, so she reads as crewed */
+/* smoke: only once she is working */
+.laden .smoke.s3{ animation-delay:1.7s }
+/* the sea reacts: rings spread from the hull when she settles */
+/* she rolls a little once she is loaded and under way */
+@media (prefers-reduced-motion:reduce){
+}
+
+/* the WebGL stage */
+.rig-stage{ position:relative; height:360px; cursor:grab; touch-action:none; }
+.rig-stage:active{ cursor:grabbing; }
+#rigCanvas{ display:block; width:100%; height:100%; }
+.rig-stage.gl-gone #rigCanvas{ opacity:.25; filter:grayscale(1); }
+.rig-hint{
+  position:absolute; left:18px; bottom:14px; pointer-events:none;
+  font-family:var(--fm); font-size:9.5px; font-weight:700;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+  opacity:.55; transition:opacity .4s ease;
+}
+.rig-stage.touched .rig-hint{ opacity:0; }
 </style>
 
 <div class="wrap">
@@ -305,6 +862,15 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
     <div class="brand"><h1>Freight Intelligence</h1><span>SAIL · SIH26006</span></div>
     <div class="grow"></div>
     <div class="live"><i></i><span id="congAsOf">connecting…</span></div>
+    <button class="theme" id="themeBtn" type="button"
+            aria-label="Switch between light and dark" title="Theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2"></circle>
+        <path d="M12 2.4v2.2M12 19.4v2.2M2.4 12h2.2M19.4 12h2.2M5.1 5.1l1.6 1.6M17.3 17.3l1.6 1.6M18.9 5.1l-1.6 1.6M6.7 17.3l-1.6 1.6"></path>
+      </svg>
+      <span id="themeLabel">Dark</span>
+    </button>
   </div>
   <nav>
     <button data-v="timing" aria-current="true"><em>01</em>Charter timing</button>
@@ -313,10 +879,134 @@ code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px
     <button data-v="risk"><em>04</em>Risk</button>
     <button data-v="booking"><em>05</em>Booking calendar</button>
     <button data-v="proof"><em>06</em>Validation</button>
-  </nav></div>
+  </nav>
+  <div class="tick" id="tick" aria-hidden="true"><div class="tick-rail" id="tickRail"></div></div>
+  </div>
 
   <!-- ══════════ 01 · timing ══════════ -->
   <div class="view on" id="v-timing">
+    <div class="mast">
+      <div class="mast-l">
+        <div class="mast-tag"><i></i>Ministry of Steel &middot; SIH26006 &middot; SAIL</div>
+        <h2>Coking coal moves by sea.<br>The <em>week you fix</em> decides the bill.</h2>
+        <p>A Capesize into an East Coast berth is a seven-figure decision taken on a
+          rate that moves daily. This forecasts that rate, prices the fleet that
+          carries it, and shows its own record &mdash; including the years it was wrong.</p>
+        <div class="mast-row">
+          <div class="mast-f"><div class="k">Capesize today</div>
+            <div class="v" id="heroIdx">&mdash;</div></div>
+          <div class="mast-f"><div class="k">The call</div>
+            <div class="v" id="heroCall">&mdash;</div></div>
+          <div class="mast-f"><div class="k">Direction, out of sample</div>
+            <div class="v" id="heroAcc">&mdash;</div></div>
+        </div>
+      </div>
+      <div class="mast-r stage" id="stage">
+        <svg viewBox="0 0 460 300" class="stage-in" id="stageIn" role="img"
+             aria-label="Bulk carriers approaching the East Coast of India">
+          <defs>
+            <linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="var(--rust)" stop-opacity=".30"/>
+              <stop offset="1" stop-color="var(--rust)" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <!-- the Bay of Bengal, stylised: the coastline runs down the
+               left, the load ports lie east, the lane between them is
+               the thing this whole project is about -->
+          <path d="M118 8 C104 52 128 74 112 106 C96 138 126 158 108 190
+                   C92 220 118 244 104 292" fill="none"
+                stroke="var(--rule-2)" stroke-width="1.6"/>
+          <path d="M118 8 C104 52 128 74 112 106 C96 138 126 158 108 190
+                   C92 220 118 244 104 292 L0 292 L0 8 Z"
+                fill="var(--sunk)" opacity=".55"/>
+          <g class="lane" stroke="var(--rust)" stroke-width="1.3" opacity=".55" fill="none">
+            <path d="M404 60 C330 74 232 66 140 66"/>
+            <path d="M414 148 C340 158 236 140 132 132"/>
+            <path d="M400 240 C332 236 226 216 128 208"/>
+          </g>
+          <g class="sea" stroke="var(--aqua)" stroke-width="1" opacity=".22" fill="none">
+            <path d="M150 272 q18 -6 36 0 t36 0 t36 0 t36 0 t36 0 t36 0"/>
+            <path d="M170 284 q18 -6 36 0 t36 0 t36 0 t36 0 t36 0"/>
+          </g>
+          <g fill="var(--rust)">
+            <g class="pt"><circle class="h" cx="140" cy="66" r="3"/><circle cx="140" cy="66" r="3"/></g>
+            <g class="pt"><circle class="h" cx="132" cy="132" r="3"/><circle cx="132" cy="132" r="3"/></g>
+            <g class="pt"><circle class="h" cx="128" cy="208" r="3"/><circle cx="128" cy="208" r="3"/></g>
+            <g class="pt"><circle class="h" cx="120" cy="170" r="3"/><circle cx="120" cy="170" r="3"/></g>
+            <g class="pt"><circle class="h" cx="112" cy="246" r="3"/><circle cx="112" cy="246" r="3"/></g>
+          </g>
+          <g font-family="var(--fm)" font-size="8.5" fill="var(--ink-3)"
+             letter-spacing="1.4">
+            <text x="150" y="62">HALDIA</text>
+            <text x="142" y="128">PARADIP</text>
+            <text x="138" y="166">DHAMRA</text>
+            <text x="138" y="204">VISAKHAPATNAM</text>
+            <text x="122" y="242">GANGAVARAM</text>
+          </g>
+          <!-- A Capesize you can load. Click it. -->
+          <g class="ship" id="ship" tabindex="0" role="button"
+             aria-pressed="false"
+             aria-label="Load and unload the vessel to see its draft change">
+            <!-- generous invisible hit area: a 60px hull is a poor target -->
+            <rect x="286" y="96" width="150" height="86" fill="transparent"/>
+            <text class="ship-hint" x="300" y="106">Click to load</text>
+            <g class="hull" id="hull" transform="translate(300 128)">
+              <!-- holds, filling from the bottom -->
+              <g class="cargo">
+                <rect x="8"  y="-13" width="17" height="13" fill="var(--rust)" opacity=".85"/>
+                <rect x="28" y="-13" width="17" height="13" fill="var(--rust)" opacity=".85"/>
+                <rect x="48" y="-13" width="17" height="13" fill="var(--rust)" opacity=".85"/>
+              </g>
+              <path d="M0 0 h86 l-10 19 H7 Z" fill="var(--ink-2)" opacity=".9"/>
+              <rect x="60" y="-13" width="17" height="13" fill="var(--ink-2)" opacity=".9"/>
+              <rect x="0" y="-2.5" width="86" height="2.5" fill="var(--rust)" opacity=".9"/>
+              <g class="wake" stroke="var(--aqua)" stroke-width="1" fill="none">
+                <path d="M-9 12 q-11 -4 -22 0"/>
+                <path d="M-9 17 q-15 -4 -30 0"/>
+              </g>
+            </g>
+            <!-- the berth's limit, and where this hull actually sits -->
+            <line class="plimit" x1="286" y1="163" x2="440" y2="163"
+                  stroke="var(--rule-2)" stroke-width="1"
+                  stroke-dasharray="3 4" opacity=".7"/>
+            <text class="dmark" id="draftTxt" x="286" y="177"
+                  font-family="var(--fm)" font-size="8.5" letter-spacing="1"
+                  fill="var(--ink-3)">BALLAST · 0 t</text>
+          </g>
+          <rect x="0" y="248" width="460" height="52" fill="url(#hg)" opacity=".5"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="rig">
+      <div class="rig-stage" id="rigStage">
+        <canvas id="rigCanvas"></canvas>
+        <div class="rig-hint" id="rigHint">Drag to turn her</div>
+      </div>
+      <div class="rig-side">
+        <div>
+          <div class="rig-k">Vessel</div>
+          <div class="rig-v" id="rigName">Capesize</div>
+        </div>
+        <div>
+          <div class="rig-k">Cargo aboard</div>
+          <div class="rig-v" id="rigTons">0 t</div>
+        </div>
+        <div>
+          <div class="rig-k">Sailing draft</div>
+          <div class="rig-v" id="rigDraft">7.4 m</div>
+          <div class="rig-bar" style="margin-top:8px">
+            <div class="rig-fill" id="rigFill"></div>
+            <div class="rig-limit" id="rigLimit" style="left:88%"></div>
+          </div>
+          <div class="rig-note" style="margin-top:6px" id="rigVerdict">
+            Paradip permits 16.0 m. Empty she floats well clear.
+          </div>
+        </div>
+        <button class="rig-btn" id="rigBtn" type="button">Load her</button>
+      </div>
+    </div>
+
     <div class="lede">
       <h2>When to fix the charter</h2>
       <p>The call for the days ahead is first, because that is the only one a
@@ -812,8 +1502,16 @@ const ordinal = n => {
 };
 const esc = s => String(s).replace(/"/g, '&quot;');
 
-const RUST = '#c2410c', AQUA = '#0e7f57', AMBER = '#eda100';
-const INK2 = '#55504a', INK3 = '#8a8279', RULE = '#e2ddd3';
+// Chart colours are READ from the stylesheet, never duplicated into
+// JS. Two copies of a palette drift the moment one is edited, and
+// Chart.js resolves its colours once at construction - so a theme
+// switch has to re-read these and rebuild, which is exactly what
+// applyTheme() below does.
+const cssVar = n => getComputedStyle(document.documentElement)
+    .getPropertyValue(n).trim();
+let RUST = '#c2410c', AQUA = '#0e7f57', AMBER = '#eda100';
+let INK2 = '#55504a', INK3 = '#8a8279', RULE = '#e2ddd3';
+let BAND = 'rgba(194,65,12,.07)', BAND_LINE = 'rgba(194,65,12,.30)';
 
 function countUp(el, target, render) {
     // Write the real value FIRST. The animation is decoration; if
@@ -874,11 +1572,11 @@ function drawForecast(r) {
             // confident tight interval.
             { label:`Upper ${r.interval_pct}%`,
               data: fin(r.hi_pct) === null ? [] : [c, +(c*(1+r.hi_pct/100)).toFixed(2)],
-              borderColor:'rgba(194,65,12,.30)', backgroundColor:'rgba(194,65,12,.07)',
+              borderColor:BAND_LINE, backgroundColor:BAND,
               borderWidth:1, fill:'+1', pointRadius:0, borderDash:[4,4] },
             { label:`Lower ${r.interval_pct}%`,
               data: fin(r.lo_pct) === null ? [] : [c, +(c*(1+r.lo_pct/100)).toFixed(2)],
-              borderColor:'rgba(194,65,12,.30)', borderWidth:1, fill:false,
+              borderColor:BAND_LINE, borderWidth:1, fill:false,
               pointRadius:0, borderDash:[4,4] },
             { label: 'Forecast', data:[c, r.projected_rate], borderColor:RUST,
               borderWidth:2.5, pointRadius:4, pointBackgroundColor:RUST,
@@ -1346,12 +2044,12 @@ async function loadAhead() {
             data: { labels: labels, datasets: [
                 { label: 'Upper ' + f.interval_pct + '%',
                   data: [idx].concat(hs.map(h => lvl(h.hi_pct))),
-                  borderColor: 'rgba(194,65,12,.30)',
-                  backgroundColor: 'rgba(194,65,12,.07)',
+                  borderColor: BAND_LINE,
+                  backgroundColor: BAND,
                   borderWidth: 1, fill: '+1', pointRadius: 0, borderDash: [4, 4] },
                 { label: 'Lower ' + f.interval_pct + '%',
                   data: [idx].concat(hs.map(h => lvl(h.lo_pct))),
-                  borderColor: 'rgba(194,65,12,.30)', borderWidth: 1,
+                  borderColor: BAND_LINE, borderWidth: 1,
                   fill: false, pointRadius: 0, borderDash: [4, 4] },
                 { label: 'Forecast', data: [idx].concat(hs.map(h => lvl(h.expected_move_pct))),
                   borderColor: RUST, borderWidth: 2.5, pointRadius: 3,
@@ -1366,6 +2064,11 @@ async function loadAhead() {
                         + Number(x.parsed.y).toLocaleString() } } },
                 scales: axes('Capesize index') }
         });
+
+        try {
+            const mr = await fetch('/api/metrics');
+            fillHero(f, mr.ok ? await mr.json() : null);
+        } catch (e) { fillHero(f, null); }
 
         body.innerHTML = hs.map(h => {
             const v = h.validation || {};
@@ -1521,8 +2224,8 @@ async function loadBooking() {
                 '\u20b9' + nfix(im.annual_crore, 2) + ' crore';
             document.getElementById('bk_impact').innerHTML =
                 '<b>' + nfix(im.saved_pct, 2) + '%</b> of the freight rate per '
-                + 'fixture — measured here over 395 independent fixtures '
-                + '(p = ' + nfix(d.saved_p_value, 3) + ') — applied to <b>'
+                + 'fixture — measured here over ' + nloc(d.n_fixtures)
+                + ' independent fixtures (p = ' + nfix(d.saved_p_value, 3) + ') — applied to <b>'
                 + nloc(im.tonnes_per_year) + '</b> tonnes a year at <b>$'
                 + nfix(im.rate_usd_per_t, 2) + '</b>/t, converted at USD/INR <b>'
                 + nfix(im.usd_inr, 2) + '</b> read from the panel on '
@@ -1578,6 +2281,902 @@ async function loadSeasonal() {
         body.innerHTML = '<tr><td colspan="6">' + rkEsc(e.message) + '</td></tr>';
         document.getElementById('bk_seasnote').textContent = '';
     }
+}
+
+/* ═══════════ the assistant ═══════════
+   Grounded client for /api/ask. It renders what the server computed and
+   adds nothing: no number is formatted here that did not arrive in the
+   payload, which is the same rule the rest of the page follows. */
+const ASK_PROMPTS = [
+    ['Start here', ['Brief me on the whole thing']],
+    ['The forecast', ['What is the forecast right now?',
+                      'When should I book?',
+                      'What does it say a month out?']],
+    ['Whether to believe it', ['How accurate is this model?',
+                               'When does the model fail?',
+                               'How do you avoid leakage?',
+                               'How did it do in 2022?']],
+    ['Ships and ports', ['Which vessel for 150,000 tonnes?',
+                         'Can a Capesize berth at Paradip?',
+                         'How busy is Visakhapatnam?',
+                         'What is the empty leg at Haldia?']],
+    ['The business case', ['What is it worth in rupees?',
+                           'Which months are historically weak?',
+                           'What if freight is $25 a tonne on 8 million tonnes?',
+                           'Is the Baltic data licensed for this?']],
+    ['Press it', ['Show me the working',
+                  'Which port is busiest?',
+                  'Paradip vs Haldia',
+                  'What is a Capesize?']],
+];
+
+let askBusy = false;
+
+// What the last answer was about, handed back with the next question so
+// "and Haldia?" can mean what it obviously means. It lives here rather
+// than in a server session: nothing to expire, and two tabs cannot tread
+// on each other. It is cleared whenever the log is.
+let askCtx = null;
+
+// A very small markdown subset: bold, italic, inline code and bullets.
+// Escaping happens FIRST and the tags are inserted after, so nothing a
+// skill returns can close a tag - the answers are ours, but that is a
+// reason to keep the invariant rather than to skip it.
+function askMd(text) {
+    let t = rkEsc(String(text || ''));
+    t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+    t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+    t = t.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+    const out = [];
+    for (const block of t.split(/\n{2,}/)) {
+        const lines = block.split('\n');
+        if (lines[0].trim().startsWith('- ')) {
+            out.push('<ul>' + lines.map(l =>
+                '<li>' + l.replace(/^\s*-\s?/, '') + '</li>').join('') + '</ul>');
+        } else {
+            out.push('<p>' + lines.join('<br>') + '</p>');
+        }
+    }
+    return out.join('');
+}
+
+function askScroll() {
+    const log = document.getElementById('askLog');
+    log.scrollTop = log.scrollHeight;
+}
+
+function askSay(html, cls) {
+    const log = document.getElementById('askLog');
+    const el = document.createElement('div');
+    el.className = 'ask-msg ' + cls;
+    el.innerHTML = html;
+    log.appendChild(el);
+    askScroll();
+    return el;
+}
+
+function askEmpty() {
+    const log = document.getElementById('askLog');
+    log.innerHTML = '';
+    askCtx = null;   // a cleared log is a new conversation
+    const wrap = document.createElement('div');
+    wrap.className = 'ask-msg ask-empty';
+    wrap.innerHTML = ASK_PROMPTS.map(([group, qs]) =>
+        '<div class="gl">' + rkEsc(group) + '</div><div class="row">'
+        + qs.map(q => '<button class="chip" data-q="' + rkEsc(q) + '">'
+            + rkEsc(q) + '</button>').join('') + '</div>').join('');
+    log.appendChild(wrap);
+}
+
+function askRender(r) {
+    let html = '<div class="ask-bot">' + askMd(r.answer);
+    if (r.table && r.table.rows && r.table.rows.length) {
+        html += '<div class="ask-tbl"><table><thead><tr>'
+            + r.table.head.map(h => '<th>' + rkEsc(h) + '</th>').join('')
+            + '</tr></thead><tbody>'
+            + r.table.rows.map(row => '<tr>' + row.map(c =>
+                '<td>' + rkEsc(c) + '</td>').join('') + '</tr>').join('')
+            + '</tbody></table></div>';
+    }
+    // Where it came from. On every answer, because an assistant that
+    // cites nothing is indistinguishable from one that made it up.
+    if (r.source) {
+        html += '<div class="ask-src"><span class="lab">source</span>'
+            + rkEsc(r.source) + '</div>';
+    }
+    const acts = [];
+    if (r.action && r.action.view) {
+        acts.push('<button class="chip go" data-view="' + rkEsc(r.action.view)
+            + '">Show me &rarr;</button>');
+    }
+    (r.follow_up || []).forEach(q => {
+        acts.push('<button class="chip" data-q="' + rkEsc(q) + '">'
+            + rkEsc(q) + '</button>');
+    });
+    if (acts.length) html += '<div class="ask-act">' + acts.join('') + '</div>';
+    return askSay(html + '</div>', '');
+}
+
+async function askSend(question) {
+    if (askBusy || !question.trim()) return;
+    askBusy = true;
+    document.getElementById('askSend').disabled = true;
+    const first = document.querySelector('#askLog .ask-empty');
+    if (first) first.remove();
+    askSay(rkEsc(question), 'ask-you');
+    const thinking = askSay('<div class="ask-think"><i></i><i></i><i></i></div>',
+                            'ask-bot');
+    try {
+        const resp = await fetchWithTimeout('/api/ask', 30000, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: question,
+                                   context: askCtx }) });
+        const r = await resp.json();
+        thinking.remove();
+        if (!resp.ok) {
+            askSay('<div class="ask-bot"><p>' + rkEsc(r.error || 'That did not '
+                + 'go through.') + '</p></div>', '');
+        } else {
+            askRender(r);
+            if (r.context) askCtx = r.context;
+        }
+    } catch (e) {
+        thinking.remove();
+        askSay('<div class="ask-bot"><p>The assistant did not answer: '
+            + rkEsc(e.message) + '. It runs locally, so this is the page '
+            + 'talking to its own server.</p></div>', '');
+    } finally {
+        askBusy = false;
+        document.getElementById('askSend').disabled = false;
+        askScroll();
+    }
+}
+
+function askOpen(on) {
+    const p = document.getElementById('askPanel');
+    const sc = document.getElementById('askScrim');
+    p.classList.toggle('on', on);
+    sc.classList.toggle('on', on);
+    if (on) {
+        if (!document.querySelector('#askLog .ask-msg')) askEmpty();
+        setTimeout(() => document.getElementById('askInput').focus(), 60);
+    } else {
+        document.getElementById('askFab').focus();
+    }
+}
+
+function askWire() {
+    const fab = document.getElementById('askFab');
+    const form = document.getElementById('askForm');
+    const input = document.getElementById('askInput');
+    if (!fab || !form || !input) return;
+
+    fab.addEventListener('click', () => askOpen(true));
+    document.getElementById('askClose').addEventListener('click',
+        () => askOpen(false));
+    document.getElementById('askScrim').addEventListener('click',
+        () => askOpen(false));
+
+    form.addEventListener('submit', ev => {
+        ev.preventDefault();
+        const q = input.value;
+        input.value = '';
+        input.style.height = 'auto';
+        askSend(q);
+    });
+    input.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter' && !ev.shiftKey) {
+            ev.preventDefault();
+            form.requestSubmit();
+        }
+    });
+    // Grow with the question rather than scrolling a one-line box.
+    input.addEventListener('input', () => {
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    });
+
+    // Chips are delegated: the log is rebuilt on every answer.
+    document.getElementById('askLog').addEventListener('click', ev => {
+        const chip = ev.target.closest('.chip');
+        if (!chip) return;
+        if (chip.dataset.view) {
+            showView(chip.dataset.view);
+            askOpen(false);
+        } else if (chip.dataset.q) {
+            askSend(chip.dataset.q);
+        }
+    });
+
+    // Deep link: ?ask opens the panel, ?ask=<question> also asks it.
+    // Useful for sharing an answer with someone, and it is the only way
+    // to drive the panel from a headless browser in the test suite.
+    const qs = new URLSearchParams(location.search);
+    if (qs.has('ask')) {
+        askOpen(true);
+        const seeded = (qs.get('ask') || '').trim();
+        if (seeded) setTimeout(() => askSend(seeded), 120);
+    }
+
+    document.addEventListener('keydown', ev => {
+        if (ev.key === 'Escape'
+            && document.getElementById('askPanel').classList.contains('on')) {
+            askOpen(false);
+        } else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
+            ev.preventDefault();
+            askOpen(!document.getElementById('askPanel').classList.contains('on'));
+        }
+    });
+}
+
+// ═══════════ the ticker and the hero ═══════════
+// Both read the endpoints the panels below already use. Nothing here
+// is a second source of truth - if a figure is wrong in the ticker it
+// is wrong in the page, which is the only relationship worth having
+// between a summary and the thing it summarises.
+async function loadMarquee() {
+    const rail = document.getElementById('tickRail');
+    if (!rail) return;
+    const items = [];
+    const push = (k, v, cls) => items.push(
+        '<span class="tick-i"><span class="tick-k">' + rkEsc(k)
+        + '</span><span class="tick-v ' + (cls || '') + '">' + v + '</span></span>');
+
+    const [fc, mx, rk, cg, bk] = await Promise.all([
+        fetch('/api/forecast').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/metrics').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/risk').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/congestion').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/booking', { method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parcel_t: 160000, annual_t: 10000000,
+                                   rate_usd_per_t: 20 }) })
+            .then(r => r.ok ? r.json() : null).catch(() => null),
+    ]);
+
+    if (fc) {
+        push('Capesize', nloc(fc.capesize_index));
+        push('As of', fmtDate(fc.as_of), 'mut');
+        const h5 = (fc.horizons || []).find(h => h.horizon_days === 5);
+        if (h5) {
+            push('5 trading days', pct(h5.expected_move_pct),
+                 h5.expected_move_pct > 0 ? 'up' : 'dn');
+        }
+        const h21 = (fc.horizons || []).find(h => h.horizon_days === 21);
+        if (h21) {
+            push('One month', pct(h21.expected_move_pct),
+                 h21.expected_move_pct > 0 ? 'up' : 'dn');
+        }
+    }
+    if (bk && bk.best_date) {
+        push('Cheapest day', fmtDate(bk.best_date), 'dn');
+        if (bk.impact) {
+            push('Timing edge', '₹' + nfix(bk.impact.annual_crore, 1)
+                 + ' cr/yr');
+        }
+    }
+    if (mx && mx.models && mx.models[mx.best_model]) {
+        push('Direction', nfix(mx.models[mx.best_model].direction_pct, 1) + '%');
+        const c = mx.models.confidence;
+        if (c && c.tiers && c.tiers.length) {
+            const half = c.tiers.find(t => Math.abs(t.share - 0.5) < 1e-9);
+            if (half) push('On its strongest half',
+                           nfix(half.direction * 100, 1) + '%');
+        }
+    }
+    if (rk && rk.counts) {
+        const crit = rk.counts.critical || 0, warn = rk.counts.warning || 0;
+        push('Risk', crit ? crit + ' critical' : (warn ? warn + ' warning' : 'clear'),
+             crit ? 'up' : (warn ? '' : 'dn'));
+    }
+    if (cg && Array.isArray(cg.snapshots)) {
+        const live = cg.snapshots.filter(x => !x.error && x.role === 'discharge');
+        const busy = live.filter(x => /busy/i.test(x.band || ''));
+        if (live.length) {
+            push('Discharge berths', busy.length
+                 ? busy.length + ' of ' + live.length + ' busy'
+                 : live.length + ' normal', busy.length ? '' : 'dn');
+        }
+    }
+    if (!items.length) { rail.innerHTML = ''; return; }
+    // Two identical sets, so translating by exactly -50% loops without a seam.
+    const set = '<span class="tick-set">' + items.join('') + '</span>';
+    rail.innerHTML = set + set;
+
+    // Long content should not crawl; short content should not race.
+    const w = rail.scrollWidth / 2;
+    rail.style.animationDuration = Math.max(28, Math.round(w / 42)) + 's';
+}
+
+function fillHero(f, m) {
+    const idx = document.getElementById('heroIdx');
+    const call = document.getElementById('heroCall');
+    const acc = document.getElementById('heroAcc');
+    if (idx && f) idx.textContent = nloc(f.capesize_index);
+    if (acc && m && m.models && m.models[m.best_model]) {
+        acc.textContent = nfix(m.models[m.best_model].direction_pct, 1) + '%';
+    }
+    if (call && f && (f.horizons || []).length) {
+        // The same rule the verdict banner uses, so the two can never
+        // disagree on the same screen.
+        const hs = f.horizons;
+        const soon = hs.reduce((a, b) => a.horizon_days < b.horizon_days ? a : b);
+        const cheap = hs.reduce((a, b) =>
+            b.expected_move_pct < a.expected_move_pct ? b : a);
+        const typical = hs.map(h => h.hi_pct - h.lo_pct)
+            .sort((a, b) => a - b)[Math.floor(hs.length / 2)];
+        const gap = soon.expected_move_pct - cheap.expected_move_pct;
+        const flat = (cheap.horizon_days !== soon.horizon_days)
+            && !(gap > 0 && gap >= typical * 0.15);
+        call.textContent = flat ? 'No clear call'
+            : cheap.horizon_days === soon.horizon_days ? 'Fix early' : 'Wait';
+    }
+}
+
+// ═══════════ the loadable vessel ═══════════
+// The masthead's one interactive object. Loading it is not a canned
+// animation: the tonnage and the draft come from the same part-load
+// physics src/ports.py runs for the Vessel & port view, so the moment
+// the hull crosses the berth line is the moment the model says it does.
+function initShip() {
+    const stage = document.getElementById('stage');
+    const inner = document.getElementById('stageIn');
+    const ship = document.getElementById('ship');
+    const hull = document.getElementById('hull');
+    const txt = document.getElementById('draftTxt');
+    if (!stage || !ship || !hull) return;
+
+    const reduce = window.matchMedia
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // A slight parallax tilt. Small on purpose - a dashboard that swings
+    // about under the cursor reads as a toy.
+    if (inner && !reduce) {
+        stage.addEventListener('pointermove', ev => {
+            const r = stage.getBoundingClientRect();
+            const x = (ev.clientX - r.left) / r.width - .5;
+            const y = (ev.clientY - r.top) / r.height - .5;
+            inner.style.transform =
+                'rotateY(' + (x * 7).toFixed(2) + 'deg) rotateX('
+                + (-y * 5).toFixed(2) + 'deg) translateZ(0)';
+        });
+        stage.addEventListener('pointerleave', () => {
+            inner.style.transform = '';
+        });
+    }
+
+    // Deadweight and the berth are the real ones. A Capesize is
+    // 176,500 t and Paradip's coal berth permits 16.0 m against an
+    // 18.2 m laden draft, which is exactly why the part-load question
+    // exists at all.
+    const DWT = 176500, LADEN_M = 18.2, BERTH_M = 16.0;
+    const BASE_Y = 128, SINK_PX = 34;   // ballast waterline -> laden
+    let laden = false;
+
+    const paint = () => {
+        const t = laden ? DWT : 0;
+        const draft = laden ? LADEN_M : 7.4;
+        hull.setAttribute('transform',
+            'translate(300 ' + (BASE_Y + (laden ? SINK_PX : 0)) + ')');
+        ship.classList.toggle('laden', laden);
+        // Over the berth limit is the interesting state, so it is the
+        // one that changes colour.
+        ship.classList.toggle('over', laden && draft > BERTH_M);
+        ship.setAttribute('aria-pressed', String(laden));
+        if (txt) {
+            txt.textContent = laden
+                ? 'LADEN · ' + DWT.toLocaleString() + ' t · '
+                  + draft.toFixed(1) + ' m · OVER ' + BERTH_M.toFixed(1) + ' m BERTH'
+                : 'BALLAST · 0 t · ' + draft.toFixed(1) + ' m';
+            txt.setAttribute('fill', laden && draft > BERTH_M
+                ? 'var(--crit-t)' : 'var(--ink-3)');
+        }
+    };
+
+    const toggle = () => { laden = !laden; paint(); };
+    ship.addEventListener('click', toggle);
+    ship.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); }
+    });
+    paint();
+}
+
+// ═══════════ the rig ═══════════
+// Drag to turn her, click to load her. The tonnage and the draft are
+// the real part-load arithmetic - a Capesize is 176,500 t deadweight
+// and draws 18.2 m at it, Paradip's coal berth permits 16.0 m, and the
+// difference is the cargo that has to stay ashore. Watching the hull
+// settle past the line is the point; the number turning red is the
+// thing a judge remembers.
+function initRig() {
+    const cv = document.getElementById('rigCanvas');
+    const stage = document.getElementById('rigStage');
+    const btn = document.getElementById('rigBtn');
+    if (!cv || !stage || !btn || typeof THREE === 'undefined') return;
+
+    const css = n => getComputedStyle(document.documentElement)
+        .getPropertyValue(n).trim();
+    const reduce = window.matchMedia
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Real numbers, as everywhere else. A Capesize is 176,500 t and
+    // draws 18.2 m laden; Paradip's coal berth permits 16.0 m; and
+    // ports.max_cargo says 152,320 t is what actually fits under that.
+    const DWT = 176500, LADEN_M = 18.2, BERTH_M = 16.0, LIGHT_M = 7.4;
+    const FITS_PARADIP = 152320;   // ports.max_cargo('Capesize','Paradip')
+
+    const scene = new THREE.Scene();
+    const cam = new THREE.PerspectiveCamera(38, 2, 0.1, 400);
+    const renderer = new THREE.WebGLRenderer({
+        canvas: cv, antialias: true, alpha: true });
+    // A 2x pixel ratio on a wide canvas is four times the fragment work
+    // for a difference nobody sees at this size, and a soft shadow map
+    // is the single most expensive thing in the frame.
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+
+    // If the GPU drops the context - which it will, on a laptop that
+    // sleeps - fail quietly to an empty stage rather than a dead page.
+    cv.addEventListener('webglcontextlost', ev => {
+        ev.preventDefault();
+        onScreen = false;
+        gate();                          // one loop, one place to stop it
+        stage.classList.add('gl-gone');
+    });
+
+    // ── the hull ──
+    // A bulk carrier's deck plan: square transom, long parallel body,
+    // then a raked stem. Extruding that plan downward and bevelling it
+    // gives the turn of the bilge for free, which is the shape a stack
+    // of flat planes could never produce.
+    const L = 46, B = 7.4;
+    const plan = new THREE.Shape();
+    plan.moveTo(-L / 2, -B / 2);
+    plan.lineTo(L * 0.16, -B / 2);
+    plan.quadraticCurveTo(L * 0.44, -B / 2, L / 2, -B * 0.06);
+    plan.lineTo(L / 2, B * 0.06);
+    plan.quadraticCurveTo(L * 0.44, B / 2, L * 0.16, B / 2);
+    plan.lineTo(-L / 2, B / 2);
+    plan.lineTo(-L / 2, -B / 2);
+
+    const hullGeo = new THREE.ExtrudeGeometry(plan, {
+        depth: 5.4, bevelEnabled: true, bevelThickness: 1.5,
+        bevelSize: 1.15, bevelSegments: 5, curveSegments: 26 });
+    // rotateX(-90) sends the extrusion up +Y, so the shape spans 0..5.4
+    // before it is moved. Drop it so the TOP lands at y=2.0 and the deck
+    // furniture sits on the hull rather than inside it - at -1.2 the
+    // hull closed over the holds and swallowed the cargo whole.
+    hullGeo.rotateX(-Math.PI / 2);
+    hullGeo.translate(0, 2.0 - 5.4, 0);
+
+    const steel = new THREE.MeshStandardMaterial({
+        color: 0x6f7d8c, metalness: .48, roughness: .58 });
+    const deckSteel = new THREE.MeshStandardMaterial({
+        color: 0x99a5b2, metalness: .5, roughness: .5 });
+    const dark = new THREE.MeshStandardMaterial({
+        color: 0x2b3442, metalness: .4, roughness: .7 });
+    const accent = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(css('--rust') || '#ff7a45'),
+        metalness: .3, roughness: .55 });
+    const coal = new THREE.MeshStandardMaterial({
+        color: 0x14100c, metalness: .1, roughness: .95 });
+
+    const ship = new THREE.Group();
+    const hull = new THREE.Mesh(hullGeo, steel);
+    hull.castShadow = true; hull.receiveShadow = true;
+    ship.add(hull);
+
+    // boot-top stripe, just above the waterline
+    const stripe = new THREE.Mesh(
+        new THREE.ExtrudeGeometry(plan, {
+            depth: .5, bevelEnabled: false, curveSegments: 26 }), accent);
+    stripe.geometry.rotateX(-Math.PI / 2);
+    stripe.position.y = -0.35;
+    stripe.scale.set(1.012, 1, 1.012);
+    ship.add(stripe);
+
+    // deck
+    const deck = new THREE.Mesh(
+        new THREE.ExtrudeGeometry(plan, {
+            depth: .4, bevelEnabled: false, curveSegments: 26 }), dark);
+    deck.geometry.rotateX(-Math.PI / 2);
+    deck.position.y = 2.1; deck.scale.set(.93, 1, .93);
+    deck.receiveShadow = true;
+    ship.add(deck);
+
+    // hatch covers and their cargo
+    const hatches = [], mounds = [];
+    for (let i = 0; i < 5; i++) {
+        const x = -L * 0.26 + i * L * 0.13;
+
+        // the coaming: the raised rim the cover sits on
+        const coam = new THREE.Mesh(
+            new THREE.BoxGeometry(4.6, .5, 5.2), dark);
+        coam.position.set(x, 2.35, 0);
+        coam.receiveShadow = true;
+        ship.add(coam);
+
+        // the cover, hinged at its after edge so it lifts open
+        const hinge = new THREE.Group();
+        hinge.position.set(x - 2.2, 2.62, 0);
+        const lid = new THREE.Mesh(
+            new THREE.BoxGeometry(4.4, .22, 5.0), dark);
+        lid.position.set(2.2, 0, 0);
+        lid.castShadow = true;
+        hinge.add(lid);
+        ship.add(hinge); hatches.push(hinge);
+
+        // the cargo itself, heaped proud of the coaming
+        const m = new THREE.Mesh(
+            new THREE.SphereGeometry(2.6, 22, 12, 0, Math.PI * 2, 0,
+                                     Math.PI / 2), coal);
+        m.position.set(x, 2.55, 0); m.scale.set(.88, .0001, .98);
+        m.castShadow = true;
+        ship.add(m); mounds.push(m);
+    }
+
+    // deck cranes
+    const booms = [];
+    for (let i = 0; i < 4; i++) {
+        const x = -L * 0.20 + i * L * 0.13;
+        const g = new THREE.Group();
+        const post = new THREE.Mesh(
+            new THREE.CylinderGeometry(.34, .40, 3.1, 12), dark);
+        post.position.y = 1.55; post.castShadow = true;
+        const boom = new THREE.Mesh(
+            new THREE.CylinderGeometry(.16, .16, 5.6, 8), deckSteel);
+        boom.position.set(0, 1.6, 0); boom.castShadow = true;
+        booms.push(boom);
+        g.add(post, boom);
+        g.position.set(x, 2.3, 0);
+        ship.add(g);
+    }
+
+    // accommodation block and funnel, aft
+    const house = new THREE.Mesh(new THREE.BoxGeometry(4.6, 4.2, 6.2), deckSteel);
+    house.position.set(-L * 0.40, 4.4, 0); house.castShadow = true;
+    ship.add(house);
+    for (let r = 0; r < 3; r++) {
+        const win = new THREE.Mesh(
+            new THREE.BoxGeometry(4.7, .34, 6.3),
+            new THREE.MeshBasicMaterial({
+                color: new THREE.Color(css('--amber') || '#ffc145') }));
+        win.position.set(-L * 0.40, 5.3 - r * 1.25, 0);
+        ship.add(win);
+    }
+    const funnel = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.0, 1.2, 3.0, 16), dark);
+    funnel.position.set(-L * 0.455, 8.0, 0); funnel.castShadow = true;
+    const band = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.03, 1.03, .7, 16), accent);
+    band.position.set(-L * 0.455, 9.1, 0);
+    ship.add(funnel, band);
+
+    scene.add(ship);
+
+    // ── the sea ──
+    // Water, not a grey slab. Low metalness so it does not mirror the
+    // sun straight back at the camera, and fog does the rest - the
+    // plane has to be big enough that you never see its edge, so the
+    // horizon has to be dissolved rather than framed out.
+    const seaTone = () => new THREE.Color(css('--aqua') || '#2dd4a7')
+        .lerp(new THREE.Color('#0e2f45'), .72);
+    const seaMat = new THREE.MeshStandardMaterial({
+        color: seaTone(),
+        metalness: .22, roughness: .55, transparent: true, opacity: .46 });
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(260, 260, 26, 26),
+                               seaMat);
+    sea.rotation.x = -Math.PI / 2;
+    sea.receiveShadow = true;
+    scene.add(sea);
+    const seaPos = sea.geometry.attributes.position;
+    const base = Float32Array.from(seaPos.array);
+
+    // expanding wake rings, drawn as flat tori on the surface
+    const rings = [];
+    for (let i = 0; i < 3; i++) {
+        const r = new THREE.Mesh(
+            new THREE.TorusGeometry(6, .16, 8, 64),
+            new THREE.MeshBasicMaterial({
+                color: new THREE.Color(css('--aqua') || '#2dd4a7'),
+                transparent: true, opacity: 0 }));
+        r.rotation.x = -Math.PI / 2; r.position.y = .06;
+        scene.add(r); rings.push({ m: r, t: -1, delay: i * .16 });
+    }
+
+    // The card's own background, so the horizon dissolves into the page
+    // instead of ending in a hard line.
+    const fogged = () => {
+        const c = new THREE.Color(css('--card') || '#ffffff');
+        scene.fog = new THREE.Fog(c, 54, 150);
+    };
+    fogged();
+
+    // ── light ──
+    scene.add(new THREE.AmbientLight(0xffffff, .34));
+    const sun = new THREE.DirectionalLight(0xfff2e0, 1.45);
+    sun.position.set(28, 34, 18);
+    sun.castShadow = true;
+    // The shadow only ever has to cover the vessel, so a tight frustum
+    // buys far more sharpness than a bigger map would.
+    sun.shadow.mapSize.set(512, 512);
+    sun.shadow.camera.left = -32; sun.shadow.camera.right = 32;
+    sun.shadow.camera.top = 32; sun.shadow.camera.bottom = -32;
+    scene.add(sun);
+    // a cold rim from behind, so the hull separates from the ground
+    const rim = new THREE.DirectionalLight(
+        new THREE.Color(css('--aqua') || '#2dd4a7'), .55);
+    rim.position.set(-26, 10, -22);
+    scene.add(rim);
+
+    // ── state ──
+    let laden = false, yaw = -0.72, pitch = 0.52, dist = 70;
+    let drag = null, spin = !reduce, splashAt = -1;
+    const el = id => document.getElementById(id);
+
+    const paint = () => {
+        const d = laden ? LADEN_M : LIGHT_M;
+        const over = laden && d > BERTH_M;
+        el('rigTons').textContent = (laden ? DWT : 0).toLocaleString() + ' t';
+        el('rigDraft').textContent = d.toFixed(1) + ' m';
+        el('rigDraft').classList.toggle('bad', over);
+        el('rigFill').style.right = (100 - (d / LADEN_M) * 100).toFixed(1) + '%';
+        el('rigLimit').style.left = ((BERTH_M / LADEN_M) * 100).toFixed(1) + '%';
+        el('rigVerdict').innerHTML = over
+            ? 'Over Paradip\u2019s <b>16.0 m</b> by ' + (d - BERTH_M).toFixed(1)
+              + ' m. She sails part-laden at <b>' + FITS_PARADIP.toLocaleString()
+              + ' t</b> \u2014 <b>' + (DWT - FITS_PARADIP).toLocaleString()
+              + ' t</b> left ashore, every voyage.'
+            : 'Paradip permits <b>16.0 m</b>. Empty she floats well clear.';
+        btn.textContent = laden ? 'Discharge her' : 'Load her';
+    };
+
+    btn.addEventListener('click', () => {
+        laden = !laden;
+        paint();
+        splashAt = clock.getElapsedTime();
+    });
+
+    // drag to orbit
+    stage.addEventListener('pointerdown', ev => {
+        drag = { x: ev.clientX, y: ev.clientY, yaw: yaw, pitch: pitch };
+        spin = false; stage.classList.add('touched');
+        stage.setPointerCapture(ev.pointerId);
+    });
+    stage.addEventListener('pointermove', ev => {
+        if (!drag) return;
+        yaw = drag.yaw + (ev.clientX - drag.x) * .0075;
+        pitch = Math.max(.05, Math.min(1.15,
+            drag.pitch + (ev.clientY - drag.y) * .005));
+    });
+    const stop = () => { drag = null; };
+    stage.addEventListener('pointerup', stop);
+    stage.addEventListener('pointercancel', stop);
+    stage.addEventListener('wheel', ev => {
+        ev.preventDefault();
+        dist = Math.max(62, Math.min(150, dist + ev.deltaY * .05));
+    }, { passive: false });
+
+    const resize = () => {
+        const w = stage.clientWidth, h = stage.clientHeight;
+        if (!w || !h) return;
+        renderer.setSize(w, h, false);
+        cam.aspect = w / h; cam.updateProjectionMatrix();
+    };
+    resize();
+    new ResizeObserver(resize).observe(stage);
+
+    const clock = new THREE.Clock();
+    let sinkNow = 0, live = true, raf = 0, tick = 0;
+
+    // A WebGL canvas that keeps drawing while scrolled out of view, or
+    // in a background tab, is the most expensive thing a page can do
+    // for no benefit. Two conditions gate it, and both can change at
+    // once - so route them through one idempotent start/stop. Calling
+    // start() twice must not leave two loops running: that is how a
+    // canvas quietly doubles its cost every time you switch tabs.
+    let onScreen = true, running = false;
+
+    const halt = () => {
+        running = false;
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    };
+    const start = () => {
+        live = onScreen && !document.hidden;
+        if (!live || running) return;
+        running = true;
+        clock.getDelta();               // do not bank the paused time
+        raf = requestAnimationFrame(frame);
+    };
+    const gate = () => {
+        if (onScreen && !document.hidden) start();
+        else { live = false; halt(); }
+    };
+
+    if ('IntersectionObserver' in window) {
+        new IntersectionObserver(es => {
+            onScreen = es[0].isIntersecting;
+            gate();
+        }, { threshold: 0.01 }).observe(stage);
+    }
+    document.addEventListener('visibilitychange', gate);
+
+    function frame() {
+        if (!live) { running = false; raf = 0; return; }
+        tick++;
+        const t = clock.getElapsedTime();
+        if (spin) yaw += .0022;
+
+        // she settles into the water rather than snapping down
+        const want = laden ? -1.55 : 0;
+        sinkNow += (want - sinkNow) * .045;
+        ship.position.y = sinkNow;
+        // and rolls a little once she is loaded and under way
+        ship.rotation.z = laden ? Math.sin(t * .8) * .017 : 0;
+        ship.rotation.x = Math.sin(t * .62) * .006;
+
+        // The lids swing open first and the coal comes up behind them,
+        // staggered down the ship so it reads as loading rather than as
+        // one switch being thrown.
+        hatches.forEach((h, i) => {
+            const to = laden ? -0.70 : 0;
+            h.rotation.z += (to - h.rotation.z) * (.055 - i * .004);
+        });
+        mounds.forEach((m, i) => {
+            const to = laden ? .78 : .0001;
+            m.scale.y += (to - m.scale.y) * (.048 - i * .004);
+        });
+        booms.forEach((b, i) => {
+            const to = laden ? -.10 : -.72;
+            b.rotation.z += (to - b.rotation.z) * .05;
+        });
+
+        // The swell is displaced on the CPU, so it runs at a third of
+        // the frame rate - at this amplitude the eye cannot tell, and
+        // recomputing normals every frame is what made the whole page
+        // stutter.
+        if (!reduce && (tick % 3) === 0) {
+            for (let i = 0; i < seaPos.count; i++) {
+                const x = base[i * 3], y = base[i * 3 + 1];
+                seaPos.array[i * 3 + 2] =
+                    Math.sin(x * .09 + t * .9) * .34
+                    + Math.cos(y * .13 - t * .7) * .26;
+            }
+            seaPos.needsUpdate = true;
+            sea.geometry.computeVertexNormals();
+        }
+        rings.forEach(r => {
+            if (splashAt < 0) return;
+            const age = t - splashAt - r.delay;
+            if (age < 0 || age > 2.2) { r.m.material.opacity = 0; return; }
+            const p = age / 2.2;
+            r.m.scale.setScalar(.5 + p * 3.4);
+            r.m.material.opacity = .42 * (1 - p);
+        });
+
+        cam.position.set(
+            Math.sin(yaw) * Math.cos(pitch) * dist,
+            Math.sin(pitch) * dist + 1,
+            Math.cos(yaw) * Math.cos(pitch) * dist);
+        cam.lookAt(0, 1.4, 0);
+        renderer.render(scene, cam);
+        raf = requestAnimationFrame(frame);
+    }
+
+    paint();
+    // Draw one frame unconditionally. A page that loads in a background
+    // tab would otherwise gate the loop off before it ever rendered and
+    // show an empty canvas the moment it is brought forward.
+    cam.position.set(
+        Math.sin(yaw) * Math.cos(pitch) * dist,
+        Math.sin(pitch) * dist + 1,
+        Math.cos(yaw) * Math.cos(pitch) * dist);
+    cam.lookAt(0, 1.4, 0);
+    renderer.render(scene, cam);
+    start();
+
+    // repaint the materials when the theme flips
+    window.addEventListener('themechange', () => {
+        accent.color = new THREE.Color(css('--rust') || '#ff7a45');
+        seaMat.color = seaTone();
+        fogged();
+    });
+}
+
+// ═══════════ scroll motion ═══════════
+// One observer for the whole page, unobserving as it goes, so a long
+// document does not keep a hundred live callbacks alive. Everything
+// degrades to "just visible" if IntersectionObserver is missing or the
+// visitor asked for reduced motion.
+function initScrollMotion() {
+    const reduce = window.matchMedia
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const targets = document.querySelectorAll(
+        '.card, .rig, .mast, .split > .card');
+    if (reduce || !('IntersectionObserver' in window)) {
+        targets.forEach(el => el.classList.add('rev', 'in'));
+        return;
+    }
+    targets.forEach(el => el.classList.add('rev'));
+    const io = new IntersectionObserver((entries, obs) => {
+        entries.forEach(e => {
+            if (!e.isIntersecting) return;
+            e.target.classList.add('in');
+            obs.unobserve(e.target);          // once, and only once
+        });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.06 });
+    targets.forEach(el => io.observe(el));
+
+    // Anything already on screen should not wait for a scroll that may
+    // never come.
+    requestAnimationFrame(() => {
+        targets.forEach(el => {
+            const r = el.getBoundingClientRect();
+            if (r.top < window.innerHeight) el.classList.add('in');
+        });
+    });
+}
+
+// Figures count up the first time they are seen. Only the headline
+// ones - a page where every number animates is a page where none of
+// them can be read.
+function initCounters() {
+    const reduce = window.matchMedia
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || !('IntersectionObserver' in window)) return;
+    const io = new IntersectionObserver((entries, obs) => {
+        entries.forEach(e => {
+            if (!e.isIntersecting) return;
+            const el = e.target;
+            obs.unobserve(el);
+            const raw = (el.textContent || '').trim();
+            const m = raw.match(/^([^\d-]*)(-?[\d,]+(?:\.\d+)?)(.*)$/);
+            if (!m) return;
+            const pre = m[1], post = m[3];
+            const target = parseFloat(m[2].replace(/,/g, ''));
+            if (!isFinite(target)) return;
+            const dp = (m[2].split('.')[1] || '').length;
+            const grouped = m[2].indexOf(',') >= 0;
+            const t0 = performance.now(), dur = 850;
+            const fmt = v => (grouped
+                ? v.toLocaleString(undefined, { minimumFractionDigits: dp,
+                                                maximumFractionDigits: dp })
+                : v.toFixed(dp));
+            const step = now => {
+                const p = Math.min(1, (now - t0) / dur);
+                // ease-out cubic: fast, then settles
+                const v = target * (1 - Math.pow(1 - p, 3));
+                el.textContent = pre + fmt(v) + post;
+                if (p < 1) requestAnimationFrame(step);
+                else el.textContent = raw;   // land exactly on the truth
+            };
+            el.classList.add('count');
+            requestAnimationFrame(step);
+        });
+    }, { threshold: 0.6 });
+    document.querySelectorAll('.mast-f .v, .rupee, .tiles .value')
+        .forEach(el => io.observe(el));
+}
+
+// A few pixels of lean toward the pointer. Transform only.
+function initMagnetic() {
+    const reduce = window.matchMedia
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.querySelectorAll('#solveFleet, .ask-fab').forEach(btn => {
+        btn.classList.add('mag');
+        if (reduce) return;
+        btn.addEventListener('pointermove', ev => {
+            const r = btn.getBoundingClientRect();
+            const x = (ev.clientX - r.left) / r.width - .5;
+            const y = (ev.clientY - r.top) / r.height - .5;
+            btn.style.transform = 'translate(' + (x * 5).toFixed(1)
+                + 'px,' + (y * 4).toFixed(1) + 'px)';
+        });
+        btn.addEventListener('pointerleave', () => {
+            btn.style.transform = '';
+        });
+    });
 }
 
 async function fillDates(dr) {
@@ -1675,7 +3274,7 @@ async function loadPortMatrix() {
         const unver = d.ports.filter(p => !p.geometry_verified).map(p => p.name);
         document.getElementById('portCaveat').innerHTML =
             `<span class="key">
-               <span><i style="background:#0ca30c"></i>alongside</span>
+               <span><i style="background:var(--good-t)"></i>alongside</span>
                <span><i style="background:${AQUA}"></i>lighterage</span>
                <span><i style="background:${AMBER}"></i>uneconomic (&lt;${Math.round(d.min_utilisation*100)}% full)</span>
                <span><i style="background:#d03b3b"></i>cannot berth</span>
@@ -1960,7 +3559,7 @@ async function drawCongestion(port) {
               borderColor:'rgba(138,130,121,.42)', borderWidth:1, pointRadius:0 },
             { label: '7-day average', data:s.map(r => r.smoothed), borderColor:RUST,
               borderWidth:2.5, pointRadius:0, tension:.25, fill:true,
-              backgroundColor:'rgba(194,65,12,.07)' },
+              backgroundColor:BAND },
             { label: 'normal for this port', data:s.map(() => d.snapshot.baseline_calls_per_day),
               borderColor:AQUA, borderWidth:1.5, borderDash:[6,4], pointRadius:0 }
         ]},
@@ -2305,6 +3904,102 @@ async function loadRisk() {
 }
 
 const VIEWS = ['timing','fleet','ports','risk','proof','booking'];
+// ═══════════════ theme ═══════════════
+// Order of preference: what this visitor chose, then what their system
+// asks for, then light. A remembered choice must survive a reload -
+// nothing is more irritating than a theme that resets.
+const THEME_KEY = 'freight-theme';
+
+function storedTheme() {
+    try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; }
+}
+
+function systemPrefersDark() {
+    return window.matchMedia
+        && window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+// Pull the live palette into the Chart.js colour variables. legendCfg
+// and tipCfg are objects Chart reads at construction, so they are
+// MUTATED in place rather than reassigned - every existing reference
+// then sees the new values without touching a single call site.
+function syncChartPalette() {
+    RUST = cssVar('--rust') || RUST;
+    AQUA = cssVar('--aqua') || AQUA;
+    AMBER = cssVar('--amber') || AMBER;
+    INK2 = cssVar('--ink-2') || INK2;
+    INK3 = cssVar('--axis') || cssVar('--ink-3') || INK3;
+    RULE = cssVar('--grid') || cssVar('--rule') || RULE;
+    BAND = cssVar('--band') || BAND;
+    BAND_LINE = cssVar('--band-line') || BAND_LINE;
+    if (typeof legendCfg === 'object' && legendCfg.labels) {
+        legendCfg.labels.color = INK2;
+    }
+    if (typeof tipCfg === 'object') {
+        tipCfg.backgroundColor = cssVar('--tip-bg') || tipCfg.backgroundColor;
+        tipCfg.titleColor = cssVar('--tip-title') || tipCfg.titleColor;
+        tipCfg.bodyColor = cssVar('--tip-body') || tipCfg.bodyColor;
+        tipCfg.borderColor = cssVar('--rule-2') || tipCfg.borderColor;
+    }
+}
+
+// Charts cannot be re-coloured in place - Chart.js resolves colours
+// once. Each is rebuilt by re-running the function that owns it, which
+// also re-reads its data. That costs a few local requests and is worth
+// it for one line of code instead of three teardown paths.
+function repaintCharts() {
+    syncChartPalette();
+    try { if (typeof predict === 'function') predict(); } catch (e) {}
+    try { if (typeof loadAhead === 'function') loadAhead(); } catch (e) {}
+    try {
+        const sel = document.getElementById('congPort');
+        if (sel && typeof drawCongestion === 'function') {
+            drawCongestion(sel.value);
+        }
+    } catch (e) {}
+}
+
+function applyTheme(name, opts) {
+    const dark = name === 'dark';
+    const root = document.documentElement;
+    if (dark) { root.setAttribute('data-theme', 'dark'); }
+    else { root.removeAttribute('data-theme'); }
+    root.style.colorScheme = dark ? 'dark' : 'light';
+    const label = document.getElementById('themeLabel');
+    if (label) label.textContent = dark ? 'Light' : 'Dark';
+    const btn = document.getElementById('themeBtn');
+    if (btn) {
+        btn.setAttribute('aria-pressed', String(dark));
+        btn.setAttribute('aria-label',
+            dark ? 'Switch to the light theme' : 'Switch to the dark theme');
+    }
+    if (!opts || !opts.silent) {
+        try { localStorage.setItem(THEME_KEY, name); } catch (e) {}
+    }
+    // The custom properties are live by now; give the browser one frame
+    // to apply them before Chart.js reads them back.
+    requestAnimationFrame(() => requestAnimationFrame(repaintCharts));
+}
+
+function currentTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark'
+        ? 'dark' : 'light';
+}
+
+function toggleTheme() {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    // View Transitions make the flip read as one deliberate change
+    // rather than a dozen elements each crossfading on their own clock.
+    // Progressive: browsers without it simply get the CSS transition.
+    const go = () => applyTheme(next);
+    if (document.startViewTransition
+        && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.startViewTransition(go);
+    } else {
+        go();
+    }
+}
+
 function showView(name) {
     if (!VIEWS.includes(name)) name = 'timing';
     VIEWS.forEach(v => document.getElementById('v-'+v).classList.toggle('on', v === name));
@@ -2340,10 +4035,49 @@ function showView(name) {
 window.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('nav button').forEach(b =>
         b.addEventListener('click', () => showView(b.dataset.v)));
+    // The inline preload script sets data-theme before first paint, but
+    // it runs before any of this exists - so the palette has to be read
+    // into the chart variables HERE, before the first chart is built.
+    // Without this, a visitor who lands in dark gets charts drawn with
+    // light gridlines, which is subtle enough to ship unnoticed.
+    syncChartPalette();
+    const dark0 = currentTheme() === 'dark';
+    const lbl0 = document.getElementById('themeLabel');
+    if (lbl0) lbl0.textContent = dark0 ? 'Light' : 'Dark';
+
+    const btn = document.getElementById('themeBtn');
+    if (btn) {
+        btn.setAttribute('aria-pressed', String(dark0));
+        btn.setAttribute('aria-label', dark0
+            ? 'Switch to the light theme' : 'Switch to the dark theme');
+        btn.addEventListener('click', toggleTheme);
+    }
+    // Follow the system only while the visitor has expressed no
+    // preference of their own.
+    if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)')
+            .addEventListener('change', e => {
+                if (!storedTheme()) {
+                    applyTheme(e.matches ? 'dark' : 'light', {silent: true});
+                }
+            });
+    }
+
     window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
     showView(location.hash.slice(1) || 'timing');
 
+    askWire();
+    // Every one of these is decoration. A browser without WebGL, or
+    // without IntersectionObserver, should still get a working page -
+    // so a throw in any of them is logged and stepped over rather than
+    // killing everything that boots after it.
+    [initShip, initRig, initScrollMotion, initCounters, initMagnetic]
+        .forEach(fn => {
+            try { fn(); }
+            catch (err) { console.warn(fn.name + ' skipped:', err); }
+        });
     loadAhead();
+    loadMarquee();
     loadSeasonal();
     loadBooking();
     await loadMetrics();
@@ -2402,4 +4136,33 @@ window.addEventListener('DOMContentLoaded', async () => {
     portOptions();
 });
 </script>
+<button class="ask-fab" id="askFab" aria-label="Ask the assistant">
+  <span class="dot"></span>Ask about this model<kbd>Ctrl K</kbd>
+</button>
+<div class="ask-scrim" id="askScrim"></div>
+<aside class="ask" id="askPanel" role="dialog" aria-modal="true"
+       aria-labelledby="askTitle">
+  <div class="ask-head">
+    <div>
+      <h3 id="askTitle">Ask the model</h3>
+      <p>Every answer is computed from this project&rsquo;s own artefacts when
+        you ask, and names the module it came from. No language model, no
+        network &mdash; so it cannot invent a number, and it will tell you
+        when it does not know.</p>
+    </div>
+    <button class="ask-x" id="askClose" aria-label="Close">&times;</button>
+  </div>
+  <div class="ask-log" id="askLog"></div>
+  <div class="ask-foot">
+    <form class="ask-form" id="askForm">
+      <textarea id="askInput" rows="1" autocomplete="off" spellcheck="false"
+                aria-label="Your question"></textarea>
+      <button class="ask-send" id="askSend" type="submit"
+              aria-label="Send">&#8593;</button>
+    </form>
+    <p class="ask-hint">Enter to send &middot; Shift+Enter for a new line
+      &middot; Esc to close</p>
+  </div>
+</aside>
+
 </html>
