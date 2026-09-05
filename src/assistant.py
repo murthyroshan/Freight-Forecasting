@@ -1417,7 +1417,8 @@ FOLLOW_LEAD = ('and ', 'what about', 'how about', 'ok what about',
                'and what about', 'also ', 'then ', 'now ', 'but ')
 
 FOLLOW_WORDS = frozenset(('it', 'that', 'this', 'those', 'these', 'there',
-                          'them', 'same', 'instead', 'too', 'either'))
+                          'them', 'same', 'instead', 'too', 'either',
+                          'more', 'else', 'again', 'further', 'on'))
 
 # How each skill got its number. Written out rather than generated,
 # because the interesting half of every one of these is the guard, and a
@@ -1758,10 +1759,693 @@ def sk_brief(e, a):
         {'view': 'proof'})
 
 
+def sk_pitch(e, a):
+    """What is this, and why would a steel plant want it.
+
+    The single most likely first question in any review, and until now
+    it fell straight through to "I cannot answer that".
+    """
+    m = a['metrics'] or {}
+    f = a['forecast'] or {}
+    p = a['procurement'] or {}
+    dt = m.get('models', {}).get('direction_test', {})
+    text = (
+        '**Coking coal moves by sea, and the week you fix the charter '
+        'decides the bill.**\n\n'
+        'SAIL imports coking coal into East Coast berths in Capesize '
+        'parcels. Two things drive what a cargo costs, and this answers '
+        'both.\n\n'
+        '**The rate half.** The Capesize freight index moves daily. This '
+        'forecasts its direction over the days ahead')
+    # The DEPLOYED model's direction, not direction_test.rate - that
+    # one reports the best of three candidates (currently the gradient
+    # booster at a flattering 62.5%) while ridge is what actually ships.
+    # Quoting the higher number here would overstate the thing on the
+    # page by a point, which is exactly the trap this project exists to
+    # avoid.
+    best = (m.get('models') or {}).get(m.get('best_model', 'ridge'), {})
+    if best.get('direction_pct') is not None:
+        text += (' and gets it right **%s** of the time out of sample, '
+                 'against a **%s** base rate'
+                 % (_num(best['direction_pct']),
+                    _num((dt.get('base_rate') or 0) * 100)))
+    text += '.\n\n'
+    text += (
+        '**The physical half.** A Capesize draws **18.2 m** fully laden. '
+        'Paradip permits **16.0 m**. So she cannot arrive full - she '
+        'sails part-laden at **%s t** against a hold capacity of %s t, and '
+        'the difference is left ashore every single voyage. That '
+        'arithmetic is tonnes-per-centimetre immersion, not a rule of '
+        'thumb, and it is the half most freight models ignore.\n\n'
+        % (_int(ports.max_cargo('Capesize', 'Paradip')[0]),
+           _int(ports.VESSELS['Capesize']['dwt']
+                - ports.VESSELS['Capesize']['constants'])))
+    if p:
+        text += ('**What it is worth.** Replayed over %d real fixture '
+                 'weeks, timing on the model beat fixing immediately by '
+                 '**%s of the freight rate** (p = %.3f). Always waiting '
+                 'instead loses **%s**.\n\n'
+                 % (p['n_fixtures'], _num(p['model_policy']['saved_pct']),
+                    p['p_vs_zero'], _num(p['control']['saved_pct'])))
+    text += ('**What makes it different.** Every number on this page is '
+             'computed from stored artefacts when you ask for it. The '
+             'model shows the years it was wrong as prominently as the '
+             'years it was right, and it names its own controls. Ask me '
+             '*what are the weaknesses* and I will list them.')
+    return _reply(text, None, 'metrics.json + procurement.json + ports.py',
+                  ['What are the weaknesses?',
+                   'How much money does this save?',
+                   'Is it better than a coin flip?'],
+                  {'view': 'timing'})
+
+
+def sk_rebuttal(e, a):
+    """Answer the sceptical question that was actually asked.
+
+    A panel does not ask "describe your validation strategy", it says
+    "this looks like curve fitting". Each challenge below has a real,
+    sourced answer, and the honest ones concede where the evidence is
+    thin rather than talking past it.
+    """
+    q = e['q']
+    m = a['metrics'] or {}
+    p = a['procurement'] or {}
+    mods = m.get('models', {})
+    dt = mods.get('direction_test', {})
+
+    def hit(*words):
+        return any(w in q for w in words)
+
+    # --- it is just fitted to the past -----------------------------
+    if hit('curve fit', 'curve-fit', 'overfit', 'over fit', 'fitted to',
+           'data mining', 'data-mining', 'cherry'):
+        text = ('**Every number quoted is out of sample.**\n\n'
+                'The model is scored by purged expanding-window '
+                'walk-forward over **%s folds**. Each fold fits only on '
+                'days before its test block, and a gap the length of the '
+                'forecast horizon is cut out between them - without that '
+                'gap an overlapping target leaks tomorrow into today. '
+                'Nothing is ever scored on a day it was fitted on.\n\n'
+                % _int(m.get('n_folds')))
+        if dt:
+            text += ('The direction test corrects for having tried **%d '
+                     'candidate models**, so picking the winner cannot '
+                     'manufacture the result: p = %.2g after that '
+                     'correction.\n\n'
+                     % (dt.get('n_candidates', 1), dt.get('p_value', 1)))
+        text += ('The honest counterweight: the confidence tiers are '
+                 'chosen from past predictions only, and the model still '
+                 'has losing years. Ask *what are the weaknesses*.')
+        return _reply(text, None, 'models/metrics.json',
+                      ['What are the weaknesses?', 'How was it validated?'],
+                      {'view': 'proof'})
+
+    # --- a coin would do as well -----------------------------------
+    if hit('coin flip', 'coin toss', 'better than a coin', 'random guess',
+           'fifty fifty', '50/50', 'guessing'):
+        if not dt:
+            return _reply('The direction test has not been built yet.')
+        text = ('**No - and the gap is measured, not asserted.**\n\n'
+                'Direction is right **%s** of the time. A coin is not the '
+                'right comparison though: the index rises slightly more '
+                'often than it falls, so the honest baseline is that base '
+                'rate of **%s**, and the model is measured against it.\n\n'
+                '**%s** independent windows, p = **%.2g**. The windows '
+                'matter - the raw count is %s overlapping days, and '
+                'treating overlapping targets as independent would '
+                'overstate the significance by a wide margin.'
+                % (_num(dt['rate'] * 100), _num(dt['base_rate'] * 100),
+                   _int(dt['n_effective']), dt['p_value'],
+                   _int(m.get('n_scored'))))
+        return _reply(text, None, 'models/metrics.json',
+                      ['Is the sample big enough?',
+                       'What are the weaknesses?'], {'view': 'proof'})
+
+    # --- the sample is too small -----------------------------------
+    if hit('sample is too small', 'sample size', 'too small', 'enough data',
+           'small sample', 'not enough data'):
+        text = ('**%s scored days, but only %s of them are independent.**'
+                '\n\n'
+                'That distinction is the whole answer. The target is a '
+                '%s-day return, so consecutive days share most of their '
+                'window. Counting them as independent would be the single '
+                'easiest way to fake significance here, so every test '
+                'uses the effective count instead - one observation per '
+                'horizon.\n\n'
+                'On the money side the replay covers **%s real fixture '
+                'weeks**. That is a small sample and it is stated as one: '
+                'the timing edge is not distinguishable from a plain '
+                'momentum rule (p = %.2f).'
+                % (_int(m.get('n_scored')), _int(m.get('n_effective')),
+                   _int(m.get('horizon_days')),
+                   _int(p.get('n_fixtures')) if p else '-',
+                   p.get('p_vs_momentum', float('nan')) if p else float('nan')))
+        return _reply(text, None, 'metrics.json + procurement.json',
+                      ['What are the weaknesses?',
+                       'How much money does this save?'], {'view': 'proof'})
+
+    # --- freight is a random walk ----------------------------------
+    if hit('random walk', 'are random', 'is random', 'unpredictable',
+           'cannot be predicted', 'efficient market'):
+        z = mods.get('zero', {})
+        r = mods.get(m.get('best_model', 'ridge'), {})
+        text = ('**Mostly true, and that is why the baseline is '
+                '"no change".**\n\n'
+                'Assuming the rate does not move is a strong forecast, so '
+                'it is the thing to beat. Over the same days it gives an '
+                'RMSE of **%.4f**; the model gives **%.4f** - an '
+                'improvement of **%s**.\n\n'
+                'That is a small edge and it is presented as one. The '
+                'claim is not that freight is predictable; it is that '
+                'direction is called better than the base rate often '
+                'enough to be worth a few days of timing, and that the '
+                'edge collapses in calm markets where there is little '
+                'variance to explain.'
+                % (z.get('rmse', float('nan')), r.get('rmse', float('nan')),
+                   _num(r.get('skill_vs_zero_pct'))))
+        return _reply(text, None, 'models/metrics.json',
+                      ['What are the weaknesses?',
+                       'How did it do in a bad year?'], {'view': 'proof'})
+
+    # --- why not simply always wait --------------------------------
+    if hit('always wait', 'just wait', 'stops me waiting', 'why not wait',
+           'always waiting', 'wait every time'):
+        if not p:
+            return _reply('The procurement replay has not been built yet.')
+        c, mp, mo = p['control'], p['model_policy'], p['momentum']
+        text = ('**Because always waiting loses money.**\n\n'
+                'That is the control arm, and it is on the page precisely '
+                'so this question has an answer. Over %s fixture weeks:'
+                '\n\n'
+                '- Wait every time: **%s**\n'
+                '- Time it on the model: **%s**\n'
+                '- Time it on plain momentum: **%s**\n\n'
+                'The model beats the always-wait control decisively '
+                '(p = %.2g). It does **not** clearly beat momentum '
+                '(p = %.2f) - that is stated wherever the saving is '
+                'quoted, because a result that only beats a strawman is '
+                'not a result.'
+                % (_int(p['n_fixtures']), _num(c['saved_pct']),
+                   _num(mp['saved_pct']), _num(mo['saved_pct']),
+                   p['p_vs_control'], p['p_vs_momentum']))
+        return _reply(text, None, 'models/procurement.json',
+                      ['How much money does this save?',
+                       'What are the weaknesses?'], {'view': 'booking'})
+
+    # --- why not a neural net / an LLM -----------------------------
+    if hit('llm', 'chatgpt', 'gpt', 'neural', 'deep learning',
+           'transformer', 'why not ai'):
+        best = m.get('best_model', 'ridge')
+        lg = mods.get('lgbm', {})
+        rb = mods.get(best, {})
+        text = ('**Because the bigger model lost.**\n\n'
+                'Gradient boosting was fitted on the same folds and came '
+                'out behind: **%s** skill against **%s** for the linear '
+                'model. On %s independent windows there is not enough '
+                'signal to justify the extra capacity, and the honest '
+                'thing is to ship the model that won.\n\n'
+                'A language model is the wrong tool twice over here. It '
+                'cannot compute a conformal interval, and it would '
+                'happily invent a freight rate. This assistant runs no '
+                'language model at all - it routes your question to code '
+                'that reads the stored artefacts, which is why it can '
+                'refuse to answer instead of guessing.'
+                % (_num(lg.get('skill_vs_zero_pct')),
+                   _num(rb.get('skill_vs_zero_pct')),
+                   _int(m.get('n_effective'))))
+        return _reply(text, None, 'models/metrics.json',
+                      ['How was it validated?', 'What are the weaknesses?'],
+                      {'view': 'proof'})
+
+    # --- is it just a linear regression ----------------------------
+    if hit('linear regression', 'just a regression', 'simple model',
+           'only a regression', 'linear model'):
+        best = m.get('best_model', 'ridge')
+        lg = mods.get('lgbm', {})
+        rb = mods.get(best, {})
+        text = ('**Essentially yes - it is a ridge regression, and that '
+                'is a deliberate choice rather than a limitation.**\n\n'
+                'Gradient boosting was fitted on identical folds and lost: '
+                '**%s** skill against the ridge model at **%s**. With %s independent '
+                'windows, a model with more capacity mostly finds more '
+                'ways to fit noise.\n\n'
+                'The work that earns the accuracy is not the estimator. '
+                'It is the %s features, the purge gap that stops an '
+                'overlapping target leaking, the conformal interval '
+                'calibrated on a block the model never fitted, and the '
+                'physical half - draft, tonnes-per-centimetre and berth '
+                'limits - which no estimator would have supplied.'
+                % (_num(lg.get('skill_vs_zero_pct')),
+                   _num(rb.get('skill_vs_zero_pct')),
+                   _int(m.get('n_effective')),
+                   len(m.get('features', [])) or 'the'))
+        return _reply(text, None, 'models/metrics.json',
+                      ['How was it validated?', 'What features does it use?'],
+                      {'view': 'proof'})
+
+    # Recognised as a challenge but not one of the specific ones.
+    return sk_limits(e, a)
+
+
+def sk_today(e, a):
+    """What a chartering desk should actually do this morning."""
+    f = a['forecast'] or {}
+    p = a['procurement'] or {}
+    hs = f.get('horizons') or []
+    if not hs:
+        return _reply('The forward forecast has not been built yet. Run '
+                      '`python -m src.forecast` and ask again.')
+    near = hs[min(4, len(hs) - 1)]
+    v = near.get('validation') or {}
+    strong = near.get('stronger_than_usual')
+    text = ('**As of %s, with the Capesize index at %s.**\n\n'
+            % (f.get('as_of', '-'), _int(f.get('capesize_index'))))
+    text += ('Over the next **%s trading days** the model expects '
+             '**%s%%**, inside an %s%% band of %s%% to %s%%.\n\n'
+             % (_int(near['horizon_days']),
+                _num(near['expected_move_pct']),
+                _int(f.get('interval_pct')),
+                _num(near['lo_pct']), _num(near['hi_pct'])))
+    if strong:
+        text += ('This call sits in the **stronger-than-usual** band, '
+                 'where direction has historically been right more often '
+                 'than average. ')
+    else:
+        text += ('This call is **not** in the stronger-than-usual band, '
+                 'so it deserves less weight than the headline accuracy '
+                 'suggests. ')
+    if v.get('direction_pct') is not None:
+        text += ('At this horizon direction has been right **%s** of the '
+                 'time out of sample against a **%s** base rate.\n\n'
+                 % (_num(v['direction_pct']), _num(v.get('base_rate_pct'))))
+    text += ('**The honest caveat.** The band is wide because freight is '
+             'volatile, and the band is the answer as much as the number '
+             'is. ')
+    if p:
+        text += ('Acting on this timing lost money on **%s** of the weeks '
+                 'it acted, historically. '
+                 % _num(p['lose_rate_pct'], 0))
+    text += ('For the cheapest day of the month and what it is worth in '
+             'rupees, ask about the **booking calendar**.')
+    return _reply(text, None, 'models/live_forecast.json',
+                  ['When should I book?', 'What is the risk this week?',
+                   'How accurate is it?'], {'view': 'timing'})
+
+
+def sk_deploy(e, a):
+    """How it runs - offline, retraining, and what it needs."""
+    m = a['metrics'] or {}
+    text = (
+        '**It is a single Flask application that serves stored '
+        'artefacts.**\n\n'
+        '- **Offline at serve time.** Every asset is vendored locally - '
+        'the chart library, the 3D library and the fonts. The page makes '
+        'no request to any outside host, so it runs on a laptop with the '
+        'network unplugged. That is enforced by a test, not a promise.\n'
+        '- **Answering is a read, not a fit.** The model is trained '
+        'ahead of time into artefacts under `models/`; a question reads '
+        'those. There is no model loaded per request and no external API '
+        'call, which is why this assistant cannot invent a number.\n'
+        '- **Retraining is a script, not a service.** The panel is '
+        'rebuilt and the walk-forward re-run from the command line. The '
+        'artefacts carry the date they were built and the page shows the '
+        'age of the forecast, refusing to display a stale one rather '
+        'than quietly serving it.\n')
+    if m.get('train_end'):
+        text += ('- The current artefacts were fitted on data to **%s**, '
+                 'over **%s** panel rows.\n'
+                 % (m['train_end'], _int(m.get('panel_rows'))))
+    text += ('\nThe only step that needs the network is fetching new '
+             'market data, and that fetch validates any new series '
+             'against the licensed copy before it is allowed to join - a '
+             'mirror that disagrees is refused rather than spliced.')
+    return _reply(text, None, 'app.py + src/fetch_data.py',
+                  ['What data does it use?', 'Is the Baltic data licensed?'],
+                  {'view': 'proof'})
+
+
+# The feature names in metrics.json are terse by design - they are
+# column names. Grouping them is what makes the list mean something to
+# somebody hearing it for the first time, and the groups are derived
+# from the names themselves rather than typed out, so a new feature
+# cannot silently go unmentioned.
+_FEATURE_GROUPS = (
+    ('the Capesize index\'s own history',
+     lambda n: n.startswith('cape_') and n != 'cape_pmx_ratio'),
+    ('the other vessel classes, which lead and lag it',
+     lambda n: n.startswith(('pmx_', 'smx_')) or n == 'cape_pmx_ratio'),
+    ('fuel', lambda n: n.startswith('brent_')),
+    ('macro conditions',
+     lambda n: n.startswith(('copper_', 'dxy_', 'sp500_'))),
+    ('the equities of the people who move the cargo',
+     lambda n: n.startswith(('miners_', 'owners_'))),
+    ('where the year is', lambda n: n.startswith('seas_')),
+)
+
+
+def sk_stack(e, a):
+    """What it is built from, and what the model actually looks at."""
+    m = a['metrics'] or {}
+    feats = list(m.get('features') or [])
+    text = ('**Python, and deliberately ordinary parts.**\n\n'
+            '- **Model**: scikit-learn. The estimator that ships is a '
+            '**%s** regression; LightGBM was fitted on identical folds '
+            'and lost, so it is not the one deployed.\n'
+            '- **Data**: pandas and numpy over Parquet, with scipy for '
+            'the significance tests.\n'
+            '- **Serving**: a single Flask app that reads pre-built '
+            'artefacts. No model is loaded per request.\n'
+            '- **Front end**: no framework. Plain JavaScript, with '
+            'Chart.js and three.js vendored into the repo so the page '
+            'runs with the network unplugged.\n\n'
+            % m.get('best_model', 'ridge'))
+    if feats:
+        text += '**What the model looks at - %d features.**\n\n' % len(feats)
+        left = list(feats)
+        for label, pred in _FEATURE_GROUPS:
+            got = [n for n in left if pred(n)]
+            if not got:
+                continue
+            left = [n for n in left if n not in got]
+            text += '- %s: `%s`\n' % (label, '`, `'.join(got))
+        if left:
+            text += '- also: `%s`\n' % '`, `'.join(left)
+        text += ('\nNo feature is a forecast of anything. Every one is '
+                 'an observation available on the day the call is made - '
+                 'that is what stops tomorrow leaking into today.\n')
+    return _reply(text, None, 'requirements.txt + models/metrics.json',
+                  ['How was it validated?', 'Does it run offline?',
+                   'Is this just a linear regression?'], {'view': 'proof'})
+
+
+def sk_versus(e, a):
+    """What this adds over how the decision is made without it."""
+    m = a['metrics'] or {}
+    p = a['procurement'] or {}
+    text = (
+        '**It does not replace a broker. It replaces guessing about '
+        'timing.**\n\n'
+        'A chartering desk already has the published index and a '
+        'broker\'s view. What it usually does not have is a written '
+        'record of how often a timing call of this kind was right, or '
+        'what waiting actually cost the last time. This project is that '
+        'record.\n\n'
+        'Three things it adds that a report or a spreadsheet does '
+        'not:\n\n'
+        '- **An out-of-sample track record.** Not a fit to history - a '
+        'walk-forward over %s folds where every call was made before '
+        'its outcome was known.\n'
+        % _int(m.get('n_folds')))
+    text += ('- **A stated interval, not just a number.** The band is '
+             'conformal, calibrated on data the model never fitted, and '
+             'it covers close to the %s%% it advertises.\n'
+             % _int((m.get('models', {}).get('conformal', {})
+                     .get('target') or 0) * 100))
+    if p:
+        text += ('- **A control arm.** Timing on the model returned '
+                 '**%s** of the freight rate over %s fixture weeks; '
+                 'always waiting returned **%s**. Without that second '
+                 'number the first one means nothing.\n'
+                 % (_num(p['model_policy']['saved_pct']),
+                    _int(p['n_fixtures']), _num(p['control']['saved_pct'])))
+    text += ('\nAnd the honest limit: it is **not** clearly better than '
+             'a simple momentum rule')
+    if p:
+        text += ' (p = %.2f)' % p['p_vs_momentum']
+    text += ('. The defensible claim is a written, checkable record of a '
+             'decision that is usually made on judgement - plus the '
+             'physical half, the berth draft arithmetic, which no rate '
+             'forecast addresses at all.\n\n'
+             'This project makes no claim about SAIL\'s internal '
+             'process; it was built from public and licensed data, not '
+             'from any description of how the desk works today.')
+    return _reply(text, None, 'metrics.json + procurement.json',
+                  ['What are the weaknesses?', 'Why does draft matter?',
+                   'How much money does this save?'], {'view': 'proof'})
+
+
+def sk_provenance(e, a):
+    """Where the numbers come from - asked bluntly, answered bluntly."""
+    m = a['metrics'] or {}
+    text = (
+        '**No. Every figure here is computed when you ask for it.**\n\n'
+        'That is a mechanism, not a promise:\n\n'
+        '- There is **no language model** anywhere in this assistant. '
+        'Your question is matched to a registry of skills, and each one '
+        'reads the same stored artefacts the dashboard reads. There is '
+        'no step at which a number could be generated rather than '
+        'looked up.\n'
+        '- **Every answer carries its source line** - the file the '
+        'numbers came from. If it cannot cite one, it does not answer.\n'
+        '- A question outside the registry gets a **refusal**, not a '
+        'guess. That is why some things I cannot tell you.\n'
+        '- The test suite recomputes the dashboard\'s claims '
+        'independently from the artefacts and fails if they disagree, '
+        'so a route can return 200 and still be caught being wrong.\n')
+    if m.get('train_end'):
+        text += ('- The current artefacts were fitted on data to **%s** '
+                 'over **%s** panel rows, and the page shows the age of '
+                 'the forecast rather than quietly serving a stale '
+                 'one.\n' % (m['train_end'], _int(m.get('panel_rows'))))
+    text += ('\nThe one thing to hold me to: the Baltic index is a '
+             '**broker survey, not a tradeable price**, so a real '
+             'fixture tracks it without equalling it. Every saving '
+             'quoted is a percentage of the freight rate, never a rupee '
+             'figure invented from one.')
+    return _reply(text, None, 'src/assistant.py + models/',
+                  ['What data does it use?', 'How was it validated?',
+                   'What are the weaknesses?'], {'view': 'proof'})
+
+
+def sk_sowhat(e, a):
+    """Judge the number the last answer gave, against its own benchmark.
+
+    "Is that good?" is the question a number invites and a dashboard
+    almost never answers. Repeating the figure is not an answer; the
+    honest reply names what it should be compared against, and concedes
+    where the comparison is unflattering.
+    """
+    ctx = e.get('ctx') or {}
+    skill = ctx.get('skill')
+    m = a['metrics'] or {}
+    p = a['procurement'] or {}
+    mods = m.get('models', {})
+    dt = mods.get('direction_test', {})
+    best = mods.get(m.get('best_model', 'ridge'), {})
+
+    if skill in ('accuracy', 'year', 'confidence', 'brief', 'pitch'):
+        if not dt or best.get('direction_pct') is None:
+            return _reply('The direction test has not been built yet.')
+        gap = best['direction_pct'] - dt['base_rate'] * 100
+        return _reply(
+            '**Good enough to act on. Not good enough to bet the plant '
+            'on - and the difference matters.**\n\n'
+            '- **The right comparison is not 50%%.** The index rises a '
+            'little more often than it falls, so the benchmark is the '
+            'base rate of **%s**. Against that, **%s** is a gap of '
+            '**%.1f points**.\n'
+            '- **It is unlikely to be luck.** p = %.2g on **%s** '
+            'independent windows, after correcting for the %d models '
+            'tried.\n'
+            '- **But it is a small edge.** Ten points of direction is '
+            'worth a few days of timing, not a change of strategy. It '
+            'buys nothing at all in a calm market, and the model has '
+            'losing years - ask *when does the model fail*.\n\n'
+            'The figure to be sceptical of is not this one. It is the '
+            'money figure: ask *is the saving good* and I will give you '
+            'the unflattering half.'
+            % (_num(dt['base_rate'] * 100), _num(best['direction_pct']),
+               gap, dt.get('p_value', 1), _int(dt.get('n_effective')),
+               dt.get('n_candidates', 1)),
+            None, 'models/metrics.json',
+            ['When does the model fail?', 'Is the saving good?'],
+            {'view': 'proof'})
+
+    if skill in ('value', 'booking', 'whatif'):
+        if not p:
+            return _reply('The procurement replay has not been built yet.')
+        return _reply(
+            '**Against the obvious control, yes. Against a lazy rule, '
+            'not provably.**\n\n'
+            '- **It beats doing the naive thing.** Timing on the model '
+            'returned **%s** of the freight rate; always waiting '
+            'returned **%s**. That difference is solid (p = %.2g).\n'
+            '- **It does not clearly beat momentum.** A rule that just '
+            'follows the recent trend returned **%s**, and the gap to '
+            'the model is not distinguishable from noise (p = %.2f). '
+            'On this evidence you could not claim the model is the '
+            'reason.\n'
+            '- **It loses often.** The policy is behind on **%s** of '
+            'the weeks it acts, and it captures only **%s** of what a '
+            'perfect foresight rule would.\n\n'
+            'The defensible claim is the control arm, not the '
+            'headline.'
+            % (_num(p['model_policy']['saved_pct']),
+               _num(p['control']['saved_pct']), p['p_vs_control'],
+               _num(p['momentum']['saved_pct']), p['p_vs_momentum'],
+               _num(p['lose_rate_pct'], 0), _num(p['capture_pct'], 0)),
+            None, 'models/procurement.json',
+            ['What are the weaknesses?', 'How was it validated?'],
+            {'view': 'booking'})
+
+    if skill == 'two_models':
+        lic = a['licensed'] or {}
+        lr = (lic.get('models') or {}).get('ridge', {})
+        if lr.get('direction_pct') is None:
+            return _reply('The licensed model has not been built yet.')
+        return _reply(
+            '**The licensed-only model is the better one, and it is not '
+            'the one that answers today.**\n\n'
+            'It calls direction **%s** of the time against the extended '
+            'model\'s **%s** - but its data stops at %s, so it cannot '
+            'say anything about this week. That was a deliberate trade: '
+            'a weaker model that runs today beats a stronger one that '
+            'stopped in 2019.\n\nThe two are never averaged. Each '
+            'period is answered by the model that actually covers it, '
+            'and every replayed call is labelled with which one made '
+            'it.'
+            % (_num(lr['direction_pct']), _num(best.get('direction_pct')),
+               lic.get('scored_end', '2019')),
+            None, 'metrics_licensed.json + metrics.json',
+            ['Why are there two models?', 'Is the Baltic data licensed?'],
+            {'view': 'proof'})
+
+    if skill in ('forecast', 'today'):
+        cf = mods.get('conformal', {})
+        return _reply(
+            '**Judge the band, not the number.**\n\n'
+            'A point forecast of a freight index is close to '
+            'meaningless on its own - the honest content is the '
+            'interval. It targets **%s%%** coverage and achieves '
+            '**%s%%** on data the model never fitted, which is the '
+            'thing to be impressed by if anything here impresses you.'
+            '\n\nThe direction call is the part worth acting on, and '
+            'that is right **%s** of the time against a **%s** base '
+            'rate. The width of the band is not a defect; it is what '
+            'freight actually does.'
+            % (_int((cf.get('target') or 0) * 100),
+               _num((cf.get('coverage') or 0) * 100),
+               _num(best.get('direction_pct')),
+               _num((dt.get('base_rate') or 0) * 100)),
+            None, 'models/metrics.json',
+            ['Is the accuracy good?', 'When does the model fail?'],
+            {'view': 'proof'})
+
+    # Nothing to judge yet.
+    return _reply(
+        'Ask me for a number first and I will tell you honestly whether '
+        'it is any good - what it should be compared against, and where '
+        'the comparison is unflattering. Most figures on this dashboard '
+        'have a control arm sitting next to them for exactly that '
+        'reason.',
+        source='assistant',
+        follow=['How accurate is it?', 'How much money does this save?'])
+
+
 def _skills():
     """(name, handler, terms). Multi-word terms score 1.5x - they are far
     less likely to match by accident than a single common word."""
     return [
+        ('sowhat', sk_sowhat, [
+            ('is that good', 2.8), ('is that any good', 2.8),
+            ('is that impressive', 2.8), ('is that a lot', 2.6),
+            ('is that high', 2.4), ('is that bad', 2.6),
+            ('is that significant', 2.6), ('so what', 2.4),
+            ('does that matter', 2.6), ('why does that matter', 2.6),
+            ('how does that compare', 2.8), ('compared to what', 2.4),
+            ('is that better', 2.4), ('should i be impressed', 2.8),
+            ('is the saving good', 2.8), ('is the accuracy good', 2.8),
+            ('is 61.7 good', 2.6), ('good enough', 2.2)]),
+        ('stack', sk_stack, [
+            ('tech stack', 2.8), ('technology stack', 2.8), ('stack', 1.4),
+            ('what did you build this in', 2.8), ('built in', 1.8),
+            ('built with', 2.0), ('what libraries', 2.6),
+            ('which libraries', 2.6), ('libraries', 1.4),
+            ('framework', 1.6), ('what language', 2.4), ('python', 1.4),
+            ('scikit', 2.0), ('sklearn', 2.0), ('flask', 1.8),
+            ('what algorithm', 2.6), ('which algorithm', 2.6),
+            ('algorithm', 1.4), ('what model is it', 2.6),
+            ('what features', 2.6), ('which features', 2.6),
+            ('how many features', 2.8), ('features does', 2.4),
+            ('what inputs', 2.2), ('predictors', 1.8),
+            ('lines of code', 2.6), ('open source', 2.0),
+            ('source code', 2.0), ('see the code', 2.4),
+            ('show me the code', 2.6), ('repository', 1.6)]),
+        ('versus', sk_versus, [
+            ('how does sail do this today', 2.8),
+            ('do this today', 2.4), ('status quo', 2.6),
+            ('the alternative', 2.4), ('what is the alternative', 2.8),
+            ('existing solution', 2.6), ('already exists', 2.4),
+            ('ask a broker', 2.8), ('broker', 1.4),
+            ('shipping companies use', 2.6), ('what do they use', 2.4),
+            ('better than a spreadsheet', 2.8), ('spreadsheet', 1.8),
+            ('excel', 1.8), ('how is this different', 2.6),
+            ('why not just', 2.0), ('competitor', 1.8),
+            ('compared to what', 2.4), ('instead of this', 2.0),
+            ('what does it replace', 2.6)]),
+        ('provenance', sk_provenance, [
+            ('make these numbers up', 2.8), ('made these up', 2.6),
+            ('making it up', 2.6), ('made up', 2.0), ('fabricated', 2.4),
+            ('invented', 2.0), ('are these real', 2.6),
+            ('are the numbers real', 2.8), ('can i trust', 2.4),
+            ('how do i know these', 2.6), ('where do the numbers', 2.8),
+            ('where does this come from', 2.6), ('provenance', 2.2),
+            ('hallucinate', 2.6), ('hallucination', 2.6),
+            ('is this an llm', 2.6), ('do you use ai', 2.4),
+            ('cite', 1.6), ('citation', 1.8), ('sourced', 1.8)]),
+        ('pitch', sk_pitch, [
+            ('what does this do', 2.6), ('what is this', 2.2),
+            ('what does it do', 2.6), ('explain the project', 2.6),
+            ('explain your project', 2.6), ('about the project', 2.2),
+            ('what problem', 2.4), ('problem statement', 2.4),
+            ('why does sail', 2.6), ('why sail', 2.2),
+            ('who is this for', 2.6), ('who is it for', 2.6),
+            ('what is the innovation', 2.6), ('innovation', 1.4),
+            ('what is novel', 2.4), ('novel', 1.2),
+            ('elevator', 1.6), ('pitch', 1.4), ('overview', 1.4),
+            ('in a nutshell', 2.2), ('summarise the project', 2.4),
+            ('use case', 1.8), ('why is this useful', 2.4),
+            ('what are you solving', 2.4), ('purpose', 1.2)]),
+        ('rebuttal', sk_rebuttal, [
+            ('curve fitting', 2.8), ('curve fit', 2.6), ('overfitting', 2.4),
+            ('overfit', 2.2), ('over fitting', 2.4), ('data mining', 2.4),
+            ('cherry picked', 2.4), ('cherry picking', 2.4),
+            ('coin flip', 2.8), ('coin toss', 2.8), ('fifty fifty', 2.4),
+            ('better than a coin', 2.8), ('random guess', 2.4),
+            ('guessing', 1.4), ('sample is too small', 2.8),
+            ('sample size', 2.4), ('too small', 2.0),
+            ('small sample', 2.4), ('not enough data', 2.4),
+            ('enough data', 2.0), ('random walk', 2.8),
+            ('are random', 2.4), ('is random', 2.2),
+            ('unpredictable', 1.8), ('efficient market', 2.4),
+            ('always wait', 2.6), ('just wait', 2.2),
+            ('why not wait', 2.6), ('always waiting', 2.6),
+            ('llm', 1.8), ('chatgpt', 2.0), ('neural', 1.8),
+            ('deep learning', 2.4), ('transformer', 1.8),
+            ('linear regression', 2.6), ('just a regression', 2.6),
+            ('only a regression', 2.6), ('linear model', 2.2),
+            ('simple model', 2.0), ('why should i believe', 2.4),
+            ('convince me', 2.2), ('prove it is real', 2.4),
+            ('is it real', 1.8), ('skeptical', 1.6), ('sceptical', 1.6)]),
+        ('today', sk_today, [
+            ('what should i do', 2.6), ('what do i do', 2.6),
+            ('what should we do', 2.6), ('recommendation', 1.8),
+            ('recommend', 1.6), ('advise', 1.4), ('advice', 1.4),
+            ('what would you do', 2.4), ('should i charter', 2.4),
+            ('good time to charter', 2.6), ('good time to book', 2.6),
+            ('is now a good time', 2.8), ('right now', 1.6),
+            ('today', 1.4), ('this morning', 2.0),
+            ('actionable', 1.8), ('bottom line today', 2.6)]),
+        ('deploy', sk_deploy, [
+            ('deploy', 1.8), ('deployment', 1.8), ('how would we run', 2.4),
+            ('how do we run', 2.4), ('run offline', 2.6),
+            ('runs offline', 2.6), ('does it run offline', 2.8),
+            ('offline', 1.6), ('internet', 1.4), ('no network', 2.2),
+            ('retrain', 2.0), ('retraining', 2.0),
+            ('how often', 1.6), ('refresh', 1.4), ('update the model', 2.4),
+            ('cost to run', 2.6), ('running cost', 2.4),
+            ('infrastructure', 1.8), ('production', 1.6),
+            ('server', 1.4), ('hosting', 1.6), ('scale', 1.2)]),
         ('forecast', sk_forecast, [
             ('forecast', 1.2), ('prediction', 1.2), ('predict', 1.0),
             ('what is the call', 2.0), ('next week', 1.5), ('outlook', 1.0),
@@ -1802,6 +2486,20 @@ def _skills():
             ('timing', 1.6),
             ('wait', 1.2)]),
         ('accuracy', sk_accuracy, [
+            ('base rate', 2.2),
+            ('the base rate', 2.4),
+            ('p value', 2.2),
+            ('significance', 1.6),
+            ('accurate', 1.4),
+            ('accuracy', 1.4),
+            ('reliable', 1.1),
+            ('reliability', 1.1),
+            ('hit rate', 1.8),
+            ('how good', 1.8),
+            ('any good', 1.8),
+            ('does it work', 2.2),
+            ('is it any good', 2.4),
+            ('performance', 1.0),
             ('how accurate', 2.5), ('accuracy', 1.5), ('how good', 1.8),
             ('does it work', 2.0), ('direction accuracy', 2.0),
             ('hit rate', 1.5), ('how reliable', 2.0), ('performance', 1.0),
@@ -1854,6 +2552,18 @@ def _skills():
             ('cheapest', 1.6),
             ('ship', 1.2)]),
         ('berth', sk_berth, [
+            ('draft', 1.4),
+            ('draught', 1.4),
+            ('tide', 1.4),
+            ('tides', 1.4),
+            ('tidal', 1.4),
+            ('depth', 1.2),
+            ('part loading', 2.4),
+            ('part load', 2.2),
+            ('part-laden', 2.2),
+            ('how much coal', 2.4),
+            ('how much fits', 2.4),
+            ('clearance', 1.4),
             ('berth', 1.5), ('draft', 1.8), ('draught', 1.8),
             ('can a', 1.2), ('fit', 1.2), ('how much cargo', 2.0),
             ('load', 1.0), ('deadweight', 1.5), ('tpc', 1.8),
@@ -1870,6 +2580,25 @@ def _skills():
             ('ballast', 2.0), ('empty leg', 2.5), ('backhaul', 2.0),
             ('leaving empty', 2.0), ('empty return', 2.0), ('deadhead', 2.0)]),
         ('method', sk_method, [
+            ('how many folds', 2.6),
+            ('folds', 1.4),
+            ('fold', 1.2),
+            ('purge', 1.8),
+            ('purged', 1.8),
+            ('leakage', 1.8),
+            ('who validated', 2.4),
+            ('what would break', 2.4),
+            ('break this', 2.0),
+            ('validated', 1.4),
+            ('validation', 1.4),
+            ('tested', 1.2),
+            ('test it', 1.6),
+            ('did you test', 2.2),
+            ('methodology', 1.4),
+            ('backtest', 1.6),
+            ('walk forward', 2.2),
+            ('cross validation', 2.2),
+            ('rigorous', 1.4),
             ('how does it work', 2.5), ('methodology', 2.0), ('leakage', 2.0),
             ('leak', 1.5), ('validated', 1.8), ('validation', 1.5),
             ('walk forward', 2.5), ('purge', 2.0), ('conformal', 2.0),
@@ -1881,6 +2610,17 @@ def _skills():
             ('why that horizon', 2.6),
             ('horizon', 1.4)]),
         ('limits', sk_limits, [
+            ('weakness', 1.4),
+            ('weaknesses', 1.4),
+            ('shortcoming', 1.4),
+            ('caveat', 1.4),
+            ('what is missing', 2.2),
+            ('not in the model', 2.4),
+            ('does not include', 2.2),
+            ('more time', 1.8),
+            ('future work', 2.2),
+            ('next steps', 1.8),
+            ('what would you improve', 2.4),
             ('fail', 1.8), ('fails', 1.8), ('weakness', 2.0),
             ('weaknesses', 2.0), ('limitation', 2.0), ('limitations', 2.0),
             ('worst', 1.5), ('problem', 1.2), ('wrong', 1.2),
@@ -1910,6 +2650,11 @@ def _skills():
             ('licensed', 1.4), ('baltic licence', 2.5),
             ('can we use', 1.8), ('permitted', 1.8)]),
         ('two_models', sk_two_models, [
+            ('average the two', 2.6),
+            ('do you average', 2.6),
+            ('averaged', 1.8),
+            ('combine the two', 2.4),
+            ('which model answers', 2.6),
             ('two models', 2.5), ('licensed model', 2.2),
             ('extended model', 2.2), ('which model', 2.0),
             ('why two', 2.0), ('spliced', 1.8), ('splice', 1.8)]),
@@ -1995,12 +2740,17 @@ CARRY = ('port', 'vessel', 'year', 'month', 'tonnes', 'horizon', 'rate')
 # Skills that must never be pulled in as the SECOND half of a two-part
 # question - they are the fallbacks, and stapling "here is what I can
 # do" onto a real answer makes it look padded.
-NO_SECOND = frozenset(('help', 'thanks', 'about', 'working', 'clarify'))
+NO_SECOND = frozenset(('help', 'thanks', 'about', 'working', 'clarify',
+                       'sowhat'))
 
 # Answers ABOUT the conversation rather than about the freight. They
 # must not become the subject themselves, or "show me the working"
 # followed by "prove it" ends up pointing at itself.
-META = frozenset(('help', 'thanks', 'about', 'working', 'clarify'))
+# 'sowhat' judges the PREVIOUS answer, so it must not become the
+# subject itself - otherwise "is that good" followed by "show me
+# more" asks the verdict to judge its own verdict.
+META = frozenset(('help', 'thanks', 'about', 'working', 'clarify',
+                  'sowhat'))
 
 
 def _shift_year(q, ctx, e):

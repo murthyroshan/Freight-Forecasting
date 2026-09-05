@@ -69,6 +69,12 @@ def main():
         'what is a capesize', 'which port is busiest', 'paradip vs haldia',
         'what if freight is $25 a tonne on 8 million tonnes',
         'show me the working', 'brief me',
+        # the opener, the sceptic, the desk and the deployment question
+        'what does this do', 'this looks like curve fitting',
+        'what should i do today', 'does it run offline',
+        # the stack, the status quo, the provenance and the verdict
+        'what is your tech stack', 'what is the alternative',
+        'did you make these numbers up', 'is that good',
     ]
     seen = set()
     for q in probes:
@@ -328,6 +334,155 @@ def main():
     check('reduced motion is respected',
           'prefers-reduced-motion' in page)
 
+
+    # ----------------------------------------------------------------
+    print('\n[10] every registered skill runs')
+
+    # sk_pitch shipped broken for exactly this reason: it routed
+    # correctly, then threw inside the handler on a helper that appends
+    # a percent sign to a tonnage. Routing tests never touched it
+    # because they only assert which skill WINS. Invoke all of them.
+    from src import assistant as _A
+    _art = _A._artefacts()
+    _skills = _A._skills()
+    check('there are skills registered', len(_skills) >= 20, len(_skills))
+    _broke = []
+    for _name, _fn, _terms in _skills:
+        for _probe in ('what is the forecast', 'paradip in 2024',
+                       'capesize 150000 tonnes at $20 a tonne'):
+            _e = _A.entities(_probe)
+            try:
+                _out = _fn(_e, _art)
+            except Exception as _exc:
+                _broke.append('%s(%r): %s' % (_name, _probe, str(_exc)[:70]))
+                break
+            if not isinstance(_out, dict) or 'answer' not in _out:
+                _broke.append('%s returned %r' % (_name, type(_out).__name__))
+                break
+    check('all %d skills run on every probe without throwing'
+          % len(_skills), not _broke, _broke[:4])
+
+    # _num appends '%'. A tonnage or a count formatted with it reads
+    # "180000% tonnes", which has now caught three separate bugs.
+    _bad_pct = []
+    for _name, _fn, _terms in _skills:
+        try:
+            _a = (_fn(_A.entities('what is the forecast'), _art)
+                  or {}).get('answer') or ''
+        except Exception:
+            continue
+        for _m in re.finditer(r'([\d,]{4,})%', _a):
+            _bad_pct.append('%s: %s' % (_name, _m.group(0)))
+    check('no skill formats a count as a percentage',
+          not _bad_pct, _bad_pct[:4])
+
+    # ----------------------------------------------------------------
+    print('\n[11] the pitch quotes the model that actually ships')
+
+    _m = _art['metrics'] or {}
+    _best = _m.get('best_model')
+    _dep = (_m.get('models') or {}).get(_best, {}).get('direction_pct')
+    _test = ((_m.get('models') or {})
+             .get('direction_test', {}).get('rate'))
+    _pitch = _A.answer('what does this do')
+    check('a pitch question routes to the pitch skill',
+          _pitch['matched'] == 'pitch', _pitch['matched'])
+    if _dep is not None:
+        check('and it quotes the deployed model (%.1f%%)' % _dep,
+              '%.1f%%' % _dep in _pitch['answer'])
+    # direction_test.rate is the best of several candidates, so it can
+    # sit above the deployed model. Quoting it in the opening pitch
+    # would overstate the page by a point.
+    if _test is not None and _dep is not None and abs(_test * 100 - _dep) > .05:
+        check('and NOT the flattering best-of-candidates figure (%.1f%%)'
+              % (_test * 100),
+              '%.1f%%' % (_test * 100) not in _pitch['answer'])
+
+    for _q, _want in (('is it accurate', 'accuracy'),
+                      ('this looks like curve fitting', 'rebuttal'),
+                      ('is 61.7% even better than a coin flip', 'rebuttal'),
+                      ('what stops me just always waiting', 'rebuttal'),
+                      ('is this just a linear regression', 'rebuttal'),
+                      ('what should i do today', 'today'),
+                      ('does it run offline', 'deploy'),
+                      ('how often does it retrain', 'deploy')):
+        _r = _A.answer(_q)
+        check('%r routes to %s' % (_q, _want), _r['matched'] == _want,
+              _r['matched'])
+
+    # The always-wait rebuttal exists to answer the obvious objection,
+    # so it has to name the control arm rather than talk around it.
+    _wait = _A.answer('what stops me just always waiting')['answer']
+    _p = _art['procurement'] or {}
+    if _p:
+        check('the always-wait answer quotes the real control arm',
+              '%.1f%%' % _p['control']['saved_pct'] in _wait
+              or '%.1f' % _p['control']['saved_pct'] in _wait)
+        check('and concedes it does not beat momentum',
+              'momentum' in _wait.lower())
+
+
+    # ----------------------------------------------------------------
+    print('\n[12] the stack, the status quo and the provenance')
+
+    for _q, _want in (('what is your tech stack', 'stack'),
+                      ('what features does the model use', 'stack'),
+                      ('what algorithm is it', 'stack'),
+                      ('how is this better than a spreadsheet', 'versus'),
+                      ('what is the alternative', 'versus'),
+                      ('why not just ask a broker', 'versus'),
+                      ('did you make these numbers up', 'provenance'),
+                      ('are the numbers real', 'provenance'),
+                      ('how many folds', 'method'),
+                      ('do you average the two', 'two_models')):
+        _r = _A.answer(_q)
+        check('%r routes to %s' % (_q, _want), _r['matched'] == _want,
+              _r['matched'])
+
+    # Every feature in metrics.json must appear in the stack answer, or
+    # a feature could be added and silently never mentioned.
+    _feats = (_art['metrics'] or {}).get('features') or []
+    _stack = _A.answer('what features does the model use')['answer']
+    _absent = [f for f in _feats if f not in _stack]
+    check('all %d features are named' % len(_feats), not _absent, _absent[:4])
+    check('and the count it states matches the artefact',
+          '%d features' % len(_feats) in _stack)
+
+    # The comparison answer must not invent a description of how the
+    # customer works today - the project has no source for that.
+    _v = _A.answer('what is the alternative')['answer']
+    check('the comparison concedes it does not beat momentum',
+          'momentum' in _v.lower())
+    check('and makes no claim about the customer internal process',
+          'no claim about' in _v.lower())
+
+    # ----------------------------------------------------------------
+    print('\n[13] "is that good" judges rather than repeats')
+
+    _acc = _A.answer('how accurate is it')
+    _v1 = _A.answer('is that good', _acc.get('context'))
+    check('a judgement follow-up routes to the verdict skill',
+          _v1['matched'] == 'sowhat', _v1['matched'])
+    check('and it does not simply repeat the previous answer',
+          _v1['answer'] != _acc['answer'])
+    check('it names the base rate as the right comparison, not 50 percent',
+          'base rate' in _v1['answer'])
+
+    _val = _A.answer('how much money does this save')
+    _v2 = _A.answer('is that good', _val.get('context'))
+    check('the money verdict differs from the accuracy verdict',
+          _v2['answer'] != _v1['answer'])
+    check('and it concedes the momentum comparison',
+          'momentum' in _v2['answer'].lower())
+
+    # sowhat judges the PREVIOUS answer, so it must never become the
+    # subject - or "is that good" then "show me more" asks the verdict
+    # to judge itself, which reads as a broken bot mid-demo.
+    _more = _A.answer('show me more', _v2.get('context'))
+    check('a continuation after a verdict returns to the real subject',
+          _more['matched'] == 'value', _more['matched'])
+    check('"show me more" is treated as a continuation at all',
+          _more['matched'] is not None)
     print('\n' + '=' * 62)
     if FAIL:
         print('  %d FAILED:' % len(FAIL))
