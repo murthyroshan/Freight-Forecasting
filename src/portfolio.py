@@ -170,8 +170,15 @@ def solve_portfolio(cargoes, voyage_cost, port_cost=None, lighterage_cost=None,
     options = []
     # Build list of valid (c_idx, c, v, p, w)
     for c_idx, c in enumerate(cargoes):
-        earliest = c.get('earliest_week', 1)
-        latest = c.get('latest_week', 4)
+        if not isinstance(c, dict):
+            raise ValueError(f"cargo {c_idx} must be a dictionary")
+        name = str(c.get('name') or f"Cargo {c_idx+1}")
+        tonnes = _finite(c.get('tonnes', 0.0), f"cargo[{name}].tonnes", lo=1.0)
+        c['tonnes'] = tonnes
+        earliest = int(c.get('earliest_week', 1))
+        latest = int(c.get('latest_week', 4))
+        if earliest < 1 or latest < earliest:
+            raise ValueError(f"cargo[{name}] has invalid week window [{earliest}, {latest}]")
         allowed_ports = c.get('allowed_ports', list(ports.PORTS.keys()))
         for v in ports.VESSELS:
             if v not in voyage_cost:

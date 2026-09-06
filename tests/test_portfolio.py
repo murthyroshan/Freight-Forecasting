@@ -113,6 +113,28 @@ def main():
     else:
         check('single cargo matches optimise.solve', False, "One of them failed")
 
+    # 10. Input validation & edge cases
+    try:
+        portfolio.solve_portfolio([{'name': 'Bad', 'tonnes': -100}], VOYAGE)
+        check('negative tonnes refused', False, 'expected ValueError')
+    except ValueError:
+        check('negative tonnes refused', True)
+
+    try:
+        portfolio.solve_portfolio([{'name': 'Bad', 'tonnes': 0}], VOYAGE)
+        check('zero tonnes refused', False, 'expected ValueError')
+    except ValueError:
+        check('zero tonnes refused', True)
+
+    try:
+        portfolio.solve_portfolio([{'name': 'Bad', 'tonnes': 10000, 'earliest_week': 3, 'latest_week': 1}], VOYAGE)
+        check('inverted week window refused', False, 'expected ValueError')
+    except ValueError:
+        check('inverted week window refused', True)
+
+    empty_res = portfolio.solve_portfolio([], VOYAGE)
+    check('empty cargoes handled cleanly', empty_res['feasible'] is False and 'reason' in empty_res)
+
     print()
     if FAIL:
         raise SystemExit('%d checks FAILED: %s' % (len(FAIL), ', '.join(FAIL)))

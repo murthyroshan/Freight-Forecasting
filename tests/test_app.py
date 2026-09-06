@@ -1264,7 +1264,7 @@ def _main():
           "'th percentile" not in html)
     node = _sh4.which('node')
     if node:
-        m_o = re.search(r'const ord = v => \{.*?' + chr(92) + 'n\};', html, re.S)
+        m_o = re.search(r'const ord = v => \{.*?' + chr(92) + r'n\};', html, re.S)
         check('ord() is present to be tested', bool(m_o))
         if m_o:
             js = (m_o.group(0) + chr(92) + 'n' + 'const C='
