@@ -62,45 +62,7 @@ SAIL imports millions of tonnes of coking coal and iron ore every year via Capes
 
 ## 🏗️ Architecture
 
-```mermaid
-graph TD
-    subgraph Data["📦 Data Layer (Offline)"]
-        B1[baltic_extended.parquet Capesize BCI 2002-2026]
-        B2[usdinr.parquet Daily USD/INR panel]
-        B3[portwatch_arrivals.parquet IMF PortWatch vessel counts]
-        B4[models/live_forecast.json ML forward curve]
-        B5[models/live_metrics.json Walk-forward validation]
-    end
-
-    subgraph Backend["⚙️ Flask Backend"]
-        R1["/api/forecast — 10-day Baltic curve"]
-        R2["/api/optimise — single-parcel MILP"]
-        R3["/api/portfolio/optimise — multi-cargo MILP"]
-        R4["/api/risk — weather + berth warnings"]
-        R5["/api/congestion — IMF PortWatch"]
-        R6["/api/booking — rate calendar"]
-        R7["/api/assistant — Gemini AI Q&A"]
-    end
-
-    subgraph Modules["🐍 Source Modules"]
-        M1[src/optimise.py HiGHS/scipy MILP]
-        M2[src/portfolio.py Multi-cargo MILP]
-        M3[src/risk.py Open-Meteo + cache]
-        M4[src/ports.py Naval physics]
-        M5[src/congestion.py PortWatch API]
-        M6[src/booking.py Calendar + FX]
-    end
-
-    subgraph Frontend["🖥️ Single-Page Dashboard"]
-        F1[Chart.js — All charts]
-        F2[Three.js — 3D interactive vessel]
-        F3[Vendored assets — fully offline]
-    end
-
-    Data --> Backend
-    Modules --> Backend
-    Backend --> Frontend
-```
+![Architecture](docs/architecture.jpg)
 
 ---
 
@@ -247,3 +209,4 @@ Built for **Smart India Hackathon 2026** · Problem **SIH26006** · Organised by
 ## 📄 Licence
 
 Academic / Hackathon use. Baltic Exchange data used under academic licence from Mendeley Data. All other data sources are public.
+
