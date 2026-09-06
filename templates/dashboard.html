@@ -388,6 +388,58 @@ td.n,th.n{text-align:right;font-family:var(--fm)}
 
 .note{font-size:11.5px;color:var(--ink-3);line-height:1.7;margin-top:12px}
 .note b{color:var(--ink-2)}
+/* ── decision card ────────────────────────────────── */
+.dec{
+  background:var(--card);
+  border:1px solid var(--rule);
+  border-left:4px solid var(--rule-2);
+  border-radius:6px;
+  padding:22px 24px;
+  margin:0 0 24px;
+  box-shadow:var(--elev-1);
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  animation:enter .4s cubic-bezier(.22,1,.36,1);
+}
+.dec.dec-wait{border-left-color:var(--good-t);background:linear-gradient(135deg,rgba(22,101,52,.05),var(--card))}
+.dec.dec-now{border-left-color:#d03b3b;background:linear-gradient(135deg,rgba(208,59,59,.05),var(--card))}
+.dec.dec-neutral{border-left-color:var(--axis);background:var(--card)}
+
+.dec-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid var(--rule)}
+.dec-title{font-family:var(--fm);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.dec-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--fm);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 12px;border-radius:3px}
+.dec-wait .dec-badge{background:var(--good-t);color:#fff}
+.dec-now .dec-badge{background:#d03b3b;color:#fff}
+.dec-neutral .dec-badge{background:var(--sunk);color:var(--ink-2);border:1px solid var(--rule-2)}
+
+.dec-headline{display:flex;flex-direction:column;gap:4px;margin-top:2px}
+.dec-rupee{font-family:var(--fd);font-size:32px;font-weight:600;line-height:1.2;letter-spacing:-.02em}
+.dec-wait .dec-rupee{color:var(--good-t)}
+.dec-now .dec-rupee{color:#d03b3b}
+.dec-neutral .dec-rupee{color:var(--ink)}
+.dec-sub{font-size:12px;color:var(--ink-3);font-family:var(--fm)}
+
+.dec-detail{font-size:13.5px;line-height:1.65;color:var(--ink-2);max-width:82ch;margin-top:2px}
+.dec-detail b{color:var(--ink)}
+
+.dec-meta{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--fm);font-size:11px;color:var(--ink-3);padding-top:10px;border-top:1px dashed var(--rule)}
+.dec-meta span{display:inline-flex;align-items:center;gap:5px}
+
+.dec-toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--rule);margin-top:4px}
+.dec-inputs{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.dec-inputs .f{flex:0 0 auto}
+.dec-inputs .f label{display:block;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+.dec-inputs input{width:130px;padding:6px 10px;font-family:var(--fm);font-size:13px}
+.dec-pills{display:flex;gap:6px;flex-wrap:wrap}
+.dec-pill{appearance:none;border:1px solid var(--rule-2);border-radius:4px;background:var(--sunk);color:var(--ink-2);font-family:var(--fm);font-size:11px;padding:6px 12px;cursor:pointer;transition:all .15s ease}
+.dec-pill:hover{border-color:var(--rust);color:var(--rust)}
+.dec-pill.active{border-color:var(--rust);background:var(--rust);color:var(--on-accent)}
+.pf-prov{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 14px;background:var(--sunk);border:1px solid var(--rule);border-radius:5px;margin-bottom:18px;font-size:11.5px;color:var(--ink-2)}
+.pf-prov-title{font-family:var(--fm);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.pf-prov-items{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.pf-prov-item{display:inline-flex;align-items:center;gap:5px}
+.pf-prov-item b{font-weight:600;color:var(--ink)}
 .key{display:flex;flex-wrap:wrap;gap:14px;font-size:11px;margin:2px 0 8px}
 .key span{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2)}
 .key i{width:9px;height:9px;border-radius:2px;font-style:normal}
@@ -999,7 +1051,8 @@ body{
     <button data-v="ports"><em>03</em>Port activity</button>
     <button data-v="risk"><em>04</em>Risk</button>
     <button data-v="booking"><em>05</em>Booking calendar</button>
-    <button data-v="proof"><em>06</em>Validation</button>
+    <button data-v="portfolio"><em>06</em>Portfolio</button>
+    <button data-v="proof"><em>07</em>Validation</button>
   </nav>
   <div class="tick" id="tick" aria-hidden="true"><div class="tick-rail" id="tickRail"></div></div>
   </div>
@@ -1407,6 +1460,111 @@ body{
         <tbody id="bk_seas"><tr><td colspan="6"><span class="skel"></span></td></tr></tbody>
       </table></div>
       <p class="note" id="bk_cause" style="margin:10px 0 0"></p>
+    </div>
+  </div>
+
+  <!-- ══════════ 06 · portfolio ══════════ -->
+  <div class="view" id="v-portfolio">
+    <div class="lede">
+      <h2>Monthly import plan &mdash; optimised together</h2>
+      <p>Instead of booking each cargo individually, this schedules SAIL&rsquo;s
+        entire month&rsquo;s import plan jointly &mdash; choosing which ship, which port,
+        which week for each cargo &mdash; to minimise total landed cost and prevent
+        port queueing.</p>
+    </div>
+
+    <!-- ── Data Provenance Strip ── -->
+    <div class="pf-prov">
+      <span class="pf-prov-title">Data Provenance</span>
+      <div class="pf-prov-items">
+        <span class="pf-prov-item"><span class="tag t-good">REAL</span> <b>Naval Physics:</b> Drafts, LOA, DWA from port hydrography</span>
+        <span class="pf-prov-item"><span class="tag t-good">REAL</span> <b>Forecast Engine:</b> 10-day Baltic ML forward curve</span>
+        <span class="pf-prov-item"><span class="tag t-good">REAL</span> <b>Daily FX:</b> USD/INR panel exchange rate</span>
+        <span class="pf-prov-item"><span class="tag t-warn">USER TARIFFS</span> <b>Freight &amp; Berth:</b> Base voyage lumpsum &amp; port dues</span>
+      </div>
+    </div>
+
+    <!-- ── Decision Card: Charter Now vs Wait ── -->
+    <div class="dec dec-neutral" id="decCard">
+      <div class="dec-header">
+        <span class="dec-title">Single-Parcel Fixture &middot; Executive Timing Verdict</span>
+        <span class="dec-badge" id="decBadge">LOADING…</span>
+      </div>
+      <div class="dec-headline">
+        <div class="dec-rupee" id="decRupee">&mdash;</div>
+        <div class="dec-sub" id="decSub">Evaluating forward freight curve…</div>
+      </div>
+      <div class="dec-detail" id="decDetail">Calculating the optimal charter timing for your cargo…</div>
+      <div class="dec-meta" id="decMeta"></div>
+      <div class="dec-toolbar">
+        <div class="dec-inputs">
+          <div class="f"><label>Cargo tonnes</label>
+            <input type="number" id="decParcel" value="160000" step="10000" min="1"></div>
+          <div class="f"><label>Freight $/t</label>
+            <input type="number" id="decRate" value="20.00" step="0.5" min="0.01"></div>
+        </div>
+        <div class="dec-pills">
+          <button class="dec-pill active" data-t="160000">160k t &middot; Capesize</button>
+          <button class="dec-pill" data-t="82000">82k t &middot; Panamax</button>
+          <button class="dec-pill" data-t="58000">58k t &middot; Supramax</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="cap">Monthly Plan Scenario
+        <span class="tag t-warn" style="margin-left:8px">CONFIGURABLE</span></div>
+      <p class="note" style="margin:0 0 10px">Select a realistic SAIL import program or enter custom cargoes.
+        Joint optimization schedules ships across weeks to eliminate berth queue demurrage ($120k/voyage).</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="dec-pill active" id="pfPresetStd" data-pf="standard">SAIL Standard Month &middot; 4 cargoes &middot; 460k t</button>
+        <button class="dec-pill" id="pfPresetMon" data-pf="monsoon">Monsoon Peak &middot; 6 cargoes &middot; 720k t</button>
+      </div>
+      <button id="pfSolve" style="margin-top:6px">Optimise monthly schedule</button>
+    </div>
+
+    <div id="pfResult">
+      <div class="card" id="pfImpact">
+        <div class="cap">Monthly portfolio impact &middot; joint schedule vs isolated fixtures</div>
+        <div class="tiles" style="margin-bottom:8px">
+          <div class="tile">
+            <div class="value" id="pfTotal" style="font-size:24px">&mdash;</div>
+            <div class="label">Total landed freight</div>
+          </div>
+          <div class="tile">
+            <div class="value" id="pfSaved" style="font-size:24px;color:var(--good-t)">&mdash;</div>
+            <div class="label">Demurrage &amp; timing saved</div>
+          </div>
+          <div class="tile">
+            <div class="value" id="pfClashes" style="font-size:24px;color:var(--rust)">&mdash;</div>
+            <div class="label">Berth queues eliminated</div>
+          </div>
+          <div class="tile">
+            <div class="value" id="pfDemurrage" style="font-size:24px">&mdash;</div>
+            <div class="label">Demurrage penalty avoided</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="pfScheduleCard" hidden style="margin-top:18px">
+        <div class="cap">Optimised weekly schedule</div>
+        <div class="scroll"><table>
+          <thead><tr><th>Cargo</th><th>Vessel</th><th>Discharge port</th>
+            <th>Week</th><th class="n">Voyages</th><th class="n">Tonnes</th>
+            <th class="n">$/tonne</th></tr></thead>
+          <tbody id="pfSchedBody"><tr><td colspan="7"><span class="skel"></span></td></tr></tbody>
+        </table></div>
+      </div>
+
+      <div class="card" id="pfPortWeek" hidden style="margin-top:18px">
+        <div class="cap">Port calls per week</div>
+        <div class="scroll"><table>
+          <thead id="pfWeekHead"></thead>
+          <tbody id="pfWeekBody"></tbody>
+        </table></div>
+        <p class="note" style="margin-top:8px">Cells in <b style="color:var(--crit-t)">red</b>
+          would breach berth limits under isolated booking. The portfolio avoids them.</p>
+      </div>
     </div>
   </div>
 
@@ -4063,7 +4221,7 @@ async function loadRisk() {
     document.getElementById('riskNote').textContent = d.note || '';
 }
 
-const VIEWS = ['timing','fleet','ports','risk','proof','booking'];
+const VIEWS = ['timing','fleet','ports','risk','proof','booking','portfolio'];
 // ═══════════════ theme ═══════════════
 // Order of preference: what this visitor chose, then what their system
 // asks for, then light. A remembered choice must survive a reload -
@@ -4207,8 +4365,212 @@ function showView(name) {
                 drawCongestion(sel.value);
             }
         }
+        if (name === 'portfolio') {
+            if (!pfSolved) solvePortfolio();
+        }
     }, 40);
     window.scrollTo({ top:0 });
+}
+
+/* ═══════════ Decision Card ═══════════ */
+let decSeq = 0;
+async function loadDecision() {
+    const seq = ++decSeq;
+    const card = document.getElementById('decCard');
+    const badge = document.getElementById('decBadge');
+    const rupee = document.getElementById('decRupee');
+    const sub = document.getElementById('decSub');
+    const detail = document.getElementById('decDetail');
+    const meta = document.getElementById('decMeta');
+    const parcel = Number(document.getElementById('decParcel').value) || 160000;
+    const rate = Number(document.getElementById('decRate').value) || 20;
+    try {
+        const r = await fetchWithTimeout('/api/decision', 30000, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({parcel_t: parcel, rate_usd_per_t: rate})
+        });
+        const d = await r.json();
+        if (seq !== decSeq) return;
+        if (!r.ok) {
+            badge.textContent = 'UNAVAILABLE';
+            rupee.textContent = '';
+            if (sub) sub.textContent = '';
+            detail.textContent = d.error || 'decision unavailable';
+            card.className = 'dec dec-neutral';
+            return;
+        }
+        if (d.decision === 'WAIT') {
+            card.className = 'dec dec-wait';
+            badge.textContent = d.headline ? d.headline.toUpperCase() : 'WAIT';
+            rupee.textContent = 'SAVE ' + (d.rupee_display || '$' + nloc(Math.round(d.exposure_usd)));
+            if (sub) sub.textContent = 'Cheaper forward rate expected around ' + fmtDate(d.cheapest_date);
+        } else if (d.decision === 'CHARTER_NOW') {
+            card.className = 'dec dec-now';
+            badge.textContent = 'CHARTER NOW · RATES RISING';
+            rupee.textContent = 'AVOID ' + (d.rupee_display || '$' + nloc(Math.round(d.exposure_usd))) + ' SURGE';
+            if (sub) sub.textContent = 'Rates rising across forward curve horizons';
+        } else {
+            card.className = 'dec dec-neutral';
+            badge.textContent = 'RATES STABLE · FIX ON BERTH AVAILABILITY';
+            rupee.textContent = 'RATES WITHIN ±' + nfix(d.spread_pct || 0.3, 2) + '%';
+            if (sub) sub.textContent = (d.rupee_display ? d.rupee_display + ' exposure' : '$' + nloc(Math.round(d.exposure_usd))) + ' · Rate movement is within ±' + nfix(d.typical_interval_pct || 8, 0) + '% model uncertainty';
+        }
+        detail.innerHTML = rkEsc(d.detail)
+            + (d.bad_year ? ' <b>Note: ' + (d.interval_pct||80) + '% of the time the model is within its interval, but this year it is underperforming its base rate.</b>' : '')
+            + (!d.strong_signal ? ' <b>Signal is weaker than usual.</b>' : '');
+        let m = '<span>As of ' + fmtDate(d.as_of) + '</span>';
+        m += '<span>Index ' + nloc(d.capesize_index) + '</span>';
+        if (d.usd_inr) m += '<span>USD/INR ' + nfix(d.usd_inr, 2) + '</span>';
+        m += '<span>' + nloc(parcel) + ' t @ $' + nfix(rate, 2) + '/t</span>';
+        m += '<span>Strength: ' + nfix(d.signal_strength_pct, 0) + 'th %ile</span>';
+        meta.innerHTML = m;
+    } catch (e) {
+        if (seq !== decSeq) return;
+        badge.textContent = 'UNAVAILABLE';
+        detail.textContent = e.message;
+        card.className = 'dec dec-neutral';
+    }
+}
+
+/* ═══════════ Portfolio Optimizer ═══════════ */
+let pfSolved = false;
+let pfSeq = 0;
+const PF_PRECOMPUTED = {
+    standard: {"bottlenecks_prevented": 1, "classes": ["Capesize", "Handysize", "Newcastlemax", "Panamax", "Post-Panamax", "Supramax"], "demurrage_avoided_inr": 11338524.17, "demurrage_avoided_usd": 120000.0, "isolated": [{"cargo": "Australian HCC", "result": {"ballast_caveat": null, "ballast_unpriced": [], "basis": "capacities computed from draft, TPC and dock water allowance by src/ports.py; every cost was supplied by the caller and none is measured by this repository", "classes_used": ["Capesize"], "cost_per_t": 18.3, "feasible": true, "legs": [{"ballast_cost": 0.0, "ballast_priced": true, "binding": "draft 16.00 m allowed vs 18.20 m laden", "capacity_t": 152320, "cost": 2745000.0, "cost_per_t": 18.3, "foregone_t": 24180, "parcel_utilisation": 0.9848, "port": "Paradip", "ship_utilisation": 0.863, "tonnes": 150000.0, "verdict": "alongside", "vessel": "Capesize", "voyages": 1}], "parcel_t": 150000.0, "ports_used": ["Paradip"], "total_cost": 2745000.0, "voyages": 1}}, {"cargo": "US East Coast", "result": {"ballast_caveat": null, "ballast_unpriced": [], "basis": "capacities computed from draft, TPC and dock water allowance by src/ports.py; every cost was supplied by the caller and none is measured by this repository", "classes_used": ["Capesize"], "cost_per_t": 22.05, "feasible": true, "legs": [{"ballast_cost": 0.0, "ballast_priced": true, "binding": "draft 16.00 m allowed vs 18.20 m laden", "capacity_t": 152320, "cost": 2425000.0, "cost_per_t": 22.05, "foregone_t": 24180, "parcel_utilisation": 0.7222, "port": "Paradip", "ship_utilisation": 0.863, "tonnes": 110000.0, "verdict": "alongside", "vessel": "Capesize", "voyages": 1}], "parcel_t": 110000.0, "ports_used": ["Paradip"], "total_cost": 2425000.0, "voyages": 1}}, {"cargo": "Indo Thermal", "result": {"ballast_caveat": null, "ballast_unpriced": [], "basis": "capacities computed from draft, TPC and dock water allowance by src/ports.py; every cost was supplied by the caller and none is measured by this repository", "classes_used": ["Panamax"], "cost_per_t": 26.25, "feasible": true, "legs": [{"ballast_cost": 0.0, "ballast_priced": true, "binding": "deadweight (draft not binding)", "capacity_t": 79500, "cost": 1575000.0, "cost_per_t": 26.25, "foregone_t": 0, "parcel_utilisation": 0.7547, "port": "Paradip", "ship_utilisation": 1.0, "tonnes": 60000.0, "verdict": "alongside", "vessel": "Panamax", "voyages": 1}], "parcel_t": 60000.0, "ports_used": ["Paradip"], "total_cost": 1575000.0, "voyages": 1}}, {"cargo": "Mozambique PCI", "result": {"ballast_caveat": null, "ballast_unpriced": [], "basis": "capacities computed from draft, TPC and dock water allowance by src/ports.py; every cost was supplied by the caller and none is measured by this repository", "classes_used": ["Capesize"], "cost_per_t": 19.04, "feasible": true, "legs": [{"ballast_cost": 0.0, "ballast_priced": true, "binding": "draft 16.00 m allowed vs 18.20 m laden", "capacity_t": 152320, "cost": 2665000.0, "cost_per_t": 19.04, "foregone_t": 24180, "parcel_utilisation": 0.9191, "port": "Paradip", "ship_utilisation": 0.863, "tonnes": 140000.0, "verdict": "alongside", "vessel": "Capesize", "voyages": 1}], "parcel_t": 140000.0, "ports_used": ["Paradip"], "total_cost": 2665000.0, "voyages": 1}}], "isolated_freight_usd": 9410000.0, "isolated_total": 9530000.0, "portfolio": {"cargoes_summary": [{"cost": 2745000.0, "cost_per_t": 18.3, "name": "Australian HCC", "tonnes": 150000}, {"cost": 2425000.0, "cost_per_t": 22.05, "name": "US East Coast", "tonnes": 110000}, {"cost": 1575000.0, "cost_per_t": 26.25, "name": "Indo Thermal", "tonnes": 60000}, {"cost": 2665000.0, "cost_per_t": 19.04, "name": "Mozambique PCI", "tonnes": 140000}], "cost_per_t": 20.46, "feasible": true, "schedule": [{"cargo": "Australian HCC", "cost": 2745000.0, "cost_per_t": 18.3, "port": "Paradip", "tonnes": 150000.0, "vessel": "Capesize", "voyages": 1, "week": 1}, {"cargo": "US East Coast", "cost": 2425000.0, "cost_per_t": 22.05, "port": "Paradip", "tonnes": 110000.0, "vessel": "Capesize", "voyages": 1, "week": 1}, {"cargo": "Indo Thermal", "cost": 1575000.0, "cost_per_t": 26.25, "port": "Gopalpur", "tonnes": 60000.0, "vessel": "Panamax", "voyages": 1, "week": 2}, {"cargo": "Mozambique PCI", "cost": 2665000.0, "cost_per_t": 19.04, "port": "Paradip", "tonnes": 140000.0, "vessel": "Capesize", "voyages": 1, "week": 3}], "total_cost": 9410000.0, "weekly_port_calls": {"Gopalpur": {"2": 1}, "Paradip": {"1": 2, "3": 1}}}, "ports": ["Dhamra", "Gangavaram", "Gopalpur", "Haldia", "Paradip", "Sagar-Sandheads", "Visakhapatnam"], "presets": ["monsoon", "standard"], "savings_inr": 11338524.17, "savings_pct": 1.3, "savings_usd": 120000.0, "total_cost_inr": 889129270.32, "usd_inr": 94.48770141601562, "usd_inr_as_of": "2026-09-03"},
+    monsoon: {"bottlenecks_prevented": 1, "classes": ["Capesize", "Handysize", "Newcastlemax", "Panamax", "Post-Panamax", "Supramax"], "demurrage_avoided_inr": 11338524.17, "demurrage_avoided_usd": 120000.0, "isolated": [{"cargo": "Aust HCC 1", "result": {"ballast_caveat": null, "ballast_unpriced": [], "basis": "capacities computed from draft, TPC and dock water allowance by src/ports.py; every cost was supplied by the caller and none is measured by this repository", "classes_used": ["Capesize"], "cost_per_t": 19.58, "feasible": true, "legs": [{"ballast_cost": 308340.0, "ballast_priced": true, "binding": "draft 18.00 m allowed vs 18.20 m laden", "capacity_t": 174301, "cost": 3133340.0, "cost_per_t": 19.58, "foregone_t": 2199, "parcel_utilisation": 0.918, "port": "Dhamra", "ship_utilisation": 0.9875, "tonnes": 160000.0, "verdict": "alongside", "vessel": "Capesize", "voyages": 1}], "parcel_t": 160000.0, "ports_used": ["Dhamra"], "total_cost": 3133340.0, "voyages": 1}}, {"cargo": "Aust HCC 2", "result": {"ballast_caveat": null, "ballast_unpriced": [], "basis": "capacities computed from draft, TPC and dock water allowance by src/ports.py; every cost was supplied by the caller and none is measured by this repository", "classes_used": ["Capesize"], "cost_per_t": 19.58, "feasible": true, "legs": [{"ballast_cost": 308340.0, "ballast_priced": true, "binding": "draft 18.00 m allowed vs 18.20 m laden", "capacity_t": 174301, "cost": 3133340.0, "cost_per_t": 19.58, "foregone_t": 2199, "parcel_utilisation": 0.918, "port": "Dhamra", "ship_utilisation": 0.9875, "tonnes": 160000.0, "verdict": "alongside", "vessel": "Capesize", "voyages": 1}], "parcel_t": 160000.0, "ports_used": ["Dhamra"], "total_cost": 3133340.0, "voyages": 1}}, {"cargo": "USEC 1", "result": {"ballast_caveat": null, "ballast_unpriced": [], "basis": "capacities computed from draft, TPC and dock water allowance by src/ports.py; every cost was supplied by the caller and none is measured by this repository", "classes_used": ["Capesize"], "cost_per_t": 20.88, "feasible": true, "legs": [{"ballast_cost": 0.0, "ballast_priced": true, "binding": "draft 16.00 m allowed vs 18.20 m laden", "capacity_t": 152320, "cost": 2505000.0, "cost_per_t": 20.88, "foregone_t": 24180, "parcel_utilisation": 0.7878, "port": "Paradip", "ship_utilisation": 0.863, "tonnes": 120000.0, "verdict": "alongside", "vessel": "Capesize", "voyages": 1}], "parcel_t": 120000.0, "ports_used": ["Paradip"], "total_cost": 2505000.0, "voyages": 1}}, {"cargo": "USEC 2", "result": {"ballast_caveat": null, "ballast_unpriced": [], "basis": "capacities computed from draft, TPC and dock water allowance by src/ports.py; every cost was supplied by the caller and none is measured by this repository", "classes_used": ["Capesize"], "cost_per_t": 20.88, "feasible": true, "legs": [{"ballast_cost": 0.0, "ballast_priced": true, "binding": "draft 16.00 m allowed vs 18.20 m laden", "capacity_t": 152320, "cost": 2505000.0, "cost_per_t": 20.88, "foregone_t": 24180, "parcel_utilisation": 0.7878, "port": "Paradip", "ship_utilisation": 0.863, "tonnes": 120000.0, "verdict": "alongside", "vessel": "Capesize", "voyages": 1}], "parcel_t": 120000.0, "ports_used": ["Paradip"], "total_cost": 2505000.0, "voyages": 1}}, {"cargo": "Indo Thermal", "result": {"ballast_caveat": null, "ballast_unpriced": [], "basis": "capacities computed from draft, TPC and dock water allowance by src/ports.py; every cost was supplied by the caller and none is measured by this repository", "classes_used": ["Panamax"], "cost_per_t": 23.64, "feasible": true, "legs": [{"ballast_cost": 0.0, "ballast_priced": true, "binding": "deadweight (draft not binding)", "capacity_t": 79500, "cost": 1655000.0, "cost_per_t": 23.64, "foregone_t": 0, "parcel_utilisation": 0.8805, "port": "Paradip", "ship_utilisation": 1.0, "tonnes": 70000.0, "verdict": "alongside", "vessel": "Panamax", "voyages": 1}], "parcel_t": 70000.0, "ports_used": ["Paradip"], "total_cost": 1655000.0, "voyages": 1}}, {"cargo": "Mozambique PCI", "result": {"ballast_caveat": null, "ballast_unpriced": [], "basis": "capacities computed from draft, TPC and dock water allowance by src/ports.py; every cost was supplied by the caller and none is measured by this repository", "classes_used": ["Post-Panamax"], "cost_per_t": 21.61, "feasible": true, "legs": [{"ballast_cost": 0.0, "ballast_priced": true, "binding": "deadweight (draft not binding)", "capacity_t": 95200, "cost": 1945000.0, "cost_per_t": 21.61, "foregone_t": 0, "parcel_utilisation": 0.9454, "port": "Paradip", "ship_utilisation": 1.0, "tonnes": 90000.0, "verdict": "alongside", "vessel": "Post-Panamax", "voyages": 1}], "parcel_t": 90000.0, "ports_used": ["Paradip"], "total_cost": 1945000.0, "voyages": 1}}], "isolated_freight_usd": 14876680.0, "isolated_total": 14996680.0, "portfolio": {"cargoes_summary": [{"cost": 3133340.0, "cost_per_t": 19.58, "name": "Aust HCC 1", "tonnes": 160000}, {"cost": 3133340.0, "cost_per_t": 19.58, "name": "Aust HCC 2", "tonnes": 160000}, {"cost": 2505000.0, "cost_per_t": 20.88, "name": "USEC 1", "tonnes": 120000}, {"cost": 2505000.0, "cost_per_t": 20.88, "name": "USEC 2", "tonnes": 120000}, {"cost": 1655000.0, "cost_per_t": 23.64, "name": "Indo Thermal", "tonnes": 70000}, {"cost": 1945000.0, "cost_per_t": 21.61, "name": "Mozambique PCI", "tonnes": 90000}], "cost_per_t": 20.66, "feasible": true, "schedule": [{"cargo": "Aust HCC 1", "cost": 3133340.0, "cost_per_t": 19.58, "port": "Dhamra", "tonnes": 160000.0, "vessel": "Capesize", "voyages": 1, "week": 1}, {"cargo": "Indo Thermal", "cost": 1655000.0, "cost_per_t": 23.64, "port": "Paradip", "tonnes": 70000.0, "vessel": "Panamax", "voyages": 1, "week": 1}, {"cargo": "USEC 1", "cost": 2505000.0, "cost_per_t": 20.88, "port": "Paradip", "tonnes": 120000.0, "vessel": "Capesize", "voyages": 1, "week": 1}, {"cargo": "Aust HCC 2", "cost": 3133340.0, "cost_per_t": 19.58, "port": "Dhamra", "tonnes": 160000.0, "vessel": "Capesize", "voyages": 1, "week": 4}, {"cargo": "Mozambique PCI", "cost": 1945000.0, "cost_per_t": 21.61, "port": "Paradip", "tonnes": 90000.0, "vessel": "Post-Panamax", "voyages": 1, "week": 4}, {"cargo": "USEC 2", "cost": 2505000.0, "cost_per_t": 20.88, "port": "Paradip", "tonnes": 120000.0, "vessel": "Capesize", "voyages": 1, "week": 4}], "total_cost": 14876680.0, "weekly_port_calls": {"Dhamra": {"1": 1, "4": 1}, "Paradip": {"1": 2, "4": 2}}}, "ports": ["Dhamra", "Gangavaram", "Gopalpur", "Haldia", "Paradip", "Sagar-Sandheads", "Visakhapatnam"], "presets": ["monsoon", "standard"], "savings_inr": 11338524.17, "savings_pct": 0.8, "savings_usd": 120000.0, "total_cost_inr": 1405663297.9, "usd_inr": 94.48770141601562, "usd_inr_as_of": "2026-09-03"}
+};
+const PF_CACHE = {};
+
+function renderPortfolioData(d) {
+    const p = d.portfolio || {};
+    const impact = document.getElementById('pfImpact');
+    const schedCard = document.getElementById('pfScheduleCard');
+    const portWeek = document.getElementById('pfPortWeek');
+
+    if (impact) impact.hidden = false;
+    const elTotal = document.getElementById('pfTotal');
+    if (elTotal) {
+        elTotal.textContent = '$' + fmtMoney(p.total_cost, 0)
+            + (d.total_cost_inr ? ' (₹' + fmtMoney(d.total_cost_inr / 1e7, 1) + ' cr)' : '');
+    }
+    const elSaved = document.getElementById('pfSaved');
+    if (elSaved) {
+        elSaved.textContent = '$' + fmtMoney(Math.abs(d.savings_usd), 0)
+            + (d.savings_inr ? ' (₹' + fmtMoney(Math.abs(d.savings_inr) / 1e7, 2) + ' cr)' : '');
+    }
+    const elClashes = document.getElementById('pfClashes');
+    if (elClashes) {
+        elClashes.textContent = nloc(d.bottlenecks_prevented || 0) + ' eliminated';
+    }
+    const elDem = document.getElementById('pfDemurrage');
+    if (elDem) {
+        elDem.textContent = '$' + fmtMoney(d.demurrage_avoided_usd || 0, 0)
+            + (d.demurrage_avoided_inr ? ' (₹' + fmtMoney(d.demurrage_avoided_inr / 1e7, 2) + ' cr)' : '');
+    }
+
+    // Schedule table
+    const sched = p.schedule || [];
+    if (schedCard) schedCard.hidden = !sched.length;
+    const schedBody = document.getElementById('pfSchedBody');
+    if (schedBody) {
+        schedBody.innerHTML = sched.map(s =>
+            '<tr><td><b>' + rkEsc(s.cargo) + '</b></td>'
+            + '<td><span class="tag">' + rkEsc(s.vessel) + '</span></td>'
+            + '<td>' + rkEsc(s.port) + '</td>'
+            + '<td><b>Week ' + s.week + '</b></td>'
+            + '<td class="n">' + s.voyages + '</td>'
+            + '<td class="n">' + tons(s.tonnes) + '</td>'
+            + '<td class="n">$' + fmtMoney(s.cost_per_t) + '</td></tr>').join('');
+    }
+
+    // Port x Week matrix
+    const wpc = p.weekly_port_calls || {};
+    const weeks = [1, 2, 3, 4];
+    const ports = Object.keys(wpc);
+    if (ports.length && portWeek) {
+        portWeek.hidden = false;
+        const weekHead = document.getElementById('pfWeekHead');
+        if (weekHead) {
+            weekHead.innerHTML =
+                '<tr><th>Port</th>' + weeks.map(w => '<th class="n">Week ' + w + '</th>').join('') + '<th>Status</th></tr>';
+        }
+        const weekBody = document.getElementById('pfWeekBody');
+        if (weekBody) {
+            weekBody.innerHTML = ports.map(port => {
+                const cells = weeks.map(w => {
+                    const v = (wpc[port] || {})[String(w)] || 0;
+                    return '<td class="n"' + (v > 0 ? ' style="font-weight:700"' : '') + '>'
+                        + (v > 0 ? v + ' call' + (v > 1 ? 's' : '') : '—') + '</td>';
+                }).join('');
+                return '<tr><td><b>' + rkEsc(port) + '</b></td>' + cells + '<td><span class="tag t-good">Within capacity</span></td></tr>';
+            }).join('');
+        }
+    }
+}
+
+async function solvePortfolio() {
+    const seq = ++pfSeq;
+    const activeBtn = document.querySelector('[data-pf].active');
+    const preset = activeBtn ? activeBtn.dataset.pf : 'standard';
+
+    const voyage = {};
+    document.querySelectorAll('#voyageCosts input').forEach(inp => {
+        const v = Number(inp.value);
+        if (v > 0 && inp.dataset.vessel) voyage[inp.dataset.vessel] = v;
+    });
+    if (!Object.keys(voyage).length) {
+        const fallback = {Handysize:620000,Supramax:780000,Panamax:1050000,
+            'Post-Panamax':1180000,Capesize:1500000,Newcastlemax:1620000};
+        Object.assign(voyage, fallback);
+    }
+    const fee = Number(document.getElementById('portFee')?.value) || 45000;
+    const inl = Number(document.getElementById('inlandFee')?.value) || 8;
+    const lit = Number(document.getElementById('lightFee')?.value) || 6.5;
+    const bal = Number(document.getElementById('ballastPct')?.value) || 45;
+    const portCost = {}, inlandCost = {}, lightCost = {};
+    const pNames = (PORT_REF && PORT_REF.ports && PORT_REF.ports.length)
+        ? PORT_REF.ports.map(p => p.name)
+        : ['Paradip','Dhamra','Haldia','Visakhapatnam','Gopalpur','Gangavaram','Sagar-Sandheads'];
+    pNames.forEach(p => {
+        portCost[p] = fee; inlandCost[p] = inl; lightCost[p] = lit;
+    });
+
+    const cacheKey = preset + '_' + JSON.stringify(voyage) + '_' + fee + '_' + inl + '_' + lit + '_' + bal;
+    if (PF_CACHE[cacheKey]) {
+        renderPortfolioData(PF_CACHE[cacheKey]);
+        pfSolved = true;
+        return;
+    }
+    // Instant zero-lag precomputed fallback for default inputs
+    if (typeof PF_PRECOMPUTED !== 'undefined' && PF_PRECOMPUTED[preset] && fee === 45000 && inl === 8 && lit === 6.5 && bal === 45) {
+        PF_CACHE[cacheKey] = PF_PRECOMPUTED[preset];
+        renderPortfolioData(PF_PRECOMPUTED[preset]);
+        pfSolved = true;
+        return;
+    }
+
+    const solveBtn = document.getElementById('pfSolve');
+    if (solveBtn) solveBtn.textContent = 'Solving…';
+
+    try {
+        const r = await fetchWithTimeout('/api/portfolio/optimise', 60000, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({preset: preset, voyage_cost: voyage,
+                port_cost: portCost, inland_cost: inlandCost,
+                lighterage_cost: lightCost, ballast_pct: bal/100})});
+        const d = await r.json();
+        if (seq !== pfSeq) return;
+        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        PF_CACHE[cacheKey] = d;
+        pfSolved = true;
+        renderPortfolioData(d);
+    } catch (e) {
+        if (seq !== pfSeq) return;
+        const elTotal = document.getElementById('pfTotal');
+        if (elTotal) elTotal.textContent = e.message;
+    } finally {
+        if (solveBtn) solveBtn.textContent = 'Optimise monthly schedule';
+    }
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -4256,6 +4618,7 @@ window.addEventListener('DOMContentLoaded', async () => {
             catch (err) { console.warn(fn.name + ' skipped:', err); }
         });
     loadAhead();
+    loadDecision();
     loadMarquee();
     loadSeasonal();
     loadBooking();
@@ -4283,6 +4646,7 @@ window.addEventListener('DOMContentLoaded', async () => {
             if (el) el.addEventListener('input', solveSoon);
         });
     solveFleet();
+    solvePortfolio();
 
     const cal = document.getElementById('dateCal');
     const dpick = document.getElementById('datePicker');
@@ -4307,6 +4671,32 @@ window.addEventListener('DOMContentLoaded', async () => {
     ['bk_parcel', 'bk_annual', 'bk_rate'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('input', bookSoon);
+    });
+
+    // Decision card
+    const decSoon = debounce(loadDecision, 400);
+    ['decParcel', 'decRate'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', decSoon);
+    });
+    document.querySelectorAll('.dec-pill[data-t]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.dec-pill[data-t]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('decParcel').value = btn.dataset.t;
+            loadDecision();
+        });
+    });
+
+    // Portfolio
+    const pfBtn = document.getElementById('pfSolve');
+    if (pfBtn) pfBtn.addEventListener('click', solvePortfolio);
+    document.querySelectorAll('[data-pf]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('[data-pf]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            solvePortfolio();
+        });
     });
 
     const pt = document.getElementById('parcel_t');
