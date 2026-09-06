@@ -92,6 +92,26 @@ REGION = {
     'new_orleans': 'US Gulf',
 }
 
+STATE = {
+    'paradip': 'Odisha', 'visakhapatnam': 'Andhra Pradesh',
+    'dhamra': 'Odisha', 'haldia': 'West Bengal',
+    'gopalpur': 'Odisha',
+    'hay_point': 'Queensland', 'gladstone': 'Queensland',
+    'newcastle': 'New South Wales',
+    'norfolk': 'Virginia', 'baltimore': 'Maryland',
+    'new_orleans': 'Louisiana',
+}
+
+COUNTRY = {
+    'paradip': 'India', 'visakhapatnam': 'India',
+    'dhamra': 'India', 'haldia': 'India',
+    'gopalpur': 'India',
+    'hay_point': 'Australia', 'gladstone': 'Australia',
+    'newcastle': 'Australia',
+    'norfolk': 'USA', 'baltimore': 'USA',
+    'new_orleans': 'USA',
+}
+
 ALL_PORTS = DISCHARGE + LOAD
 
 
@@ -263,6 +283,8 @@ def snapshot(port, window=WINDOW, as_of=None):
         'label': label(port),
         'role': role(port),
         'region': REGION.get(port, ''),
+        'state': STATE.get(port, ''),
+        'country': COUNTRY.get(port, ''),
         'as_of': str(calls.index[-1].date()),
         'window_days': window,
         'calls_per_day': round(current, 2),
