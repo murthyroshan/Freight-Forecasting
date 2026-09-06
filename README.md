@@ -17,18 +17,18 @@ drive the landed cost, and this repository addresses both.
 our sample; a week's timing moves lakhs per parcel.
 
 **🚢 Which ship, into which berth.** East coast draft limits bind. Paradip's coal
-berth is 16.0 m and a laden Capesize draws 18.2 m — so it sails part-laden, and
+berth is 16.0 m and a laden Capesize draws 18.2 m - so it sails part-laden, and
 how much cargo it can carry is a calculation, not a yes/no.
 
-A third question sits under both — what could stop the ship this week. The
+A third question sits under both - what could stop the ship this week. The
 dashboard answers all three, in five views:
 
 | View | Answers |
 | :--- | :--- |
 | **Charter timing** | Fix now or wait? Shows the forecast *and* what actually happened. |
-| **Vessel & port** | Which class, into which berth, how much it lifts — and the cheapest fleet for a parcel. |
+| **Vessel & port** | Which class, into which berth, how much it lifts - and the cheapest fleet for a parcel. |
 | **Port activity** | How busy every berth is this week, both ends of the lane. |
-| **Risk** | What could go wrong in the next ten days — and which warnings have a measured effect behind them. |
+| **Risk** | What could go wrong in the next ten days - and which warnings have a measured effect behind them. |
 | **Validation** | Every fold, including the ones we lose. |
 
 ## ⚙️ Quick start
@@ -64,25 +64,25 @@ eight folds, five-day purge gap between train and test.
 
 | Model | RMSE | Skill vs no-change | Direction |
 | :--- | ---: | ---: | ---: |
-| assume no change | 0.2908 | — | — |
+| assume no change | 0.2908 | - | - |
 | momentum | 0.2777 | +4.5% | 61.5% |
 | **ridge** | **0.2745** | **+5.6%** | **61.7%** |
 | LightGBM | 0.2810 | +3.4% | 62.5% |
 
 Beats the baseline in **5 of 8** folds. Conformal intervals reach **81.7%**
-coverage against an 80% target — against **81.0%** for the same intervals without
+coverage against an 80% target - against **81.0%** for the same intervals without
 volatility scaling, on the same folds. Direction is significant at
 **p = 1.0e-05**, computed on the ~394 *independent* windows rather than the 1,971
 overlapping rows.
 
 > **Read the direction figure, not the skill figure.** Direction accuracy is
 > robust: 61.7% overall, and 61.4–61.6% however you cut the sample. RMSE skill is
-> not — twelve days in early 2020, when the index fell from 207 to about 1, carry
+> not - twelve days in early 2020, when the index fell from 207 to about 1, carry
 > most of it, and excluding them takes +5.6% down to **+2.0%**. Both numbers are
 > real; only one of them is stable.
 
 > **Nobody gets 70–80% on a five-day freight return.** A trivial momentum rule
-> scores 78.1% on *next-day* direction and 57.8% at five days — the high figures
+> scores 78.1% on *next-day* direction and 57.8% at five days - the high figures
 > quoted for freight are a one-day-horizon artefact of a smoothed broker survey.
 > In the one BDI study using a return target, a stated benchmark and DM tests,
 > sign accuracy ran 48–57%.
@@ -104,13 +104,13 @@ nothing, and says so. The pattern holds in the recent period too, weaker:
 it cannot be won by always saying "up".*
 
 **And the model can tell you in advance which weeks those are.** The table above
-sorts by how much the rate turned out to move — something you only learn
+sorts by how much the rate turned out to move - something you only learn
 afterwards. This one sorts by the size of the prediction, which is known the
 moment the model runs:
 
 | Act only when… | Weeks | Direction | vs all weeks |
 | :--- | ---: | ---: | ---: |
-| always — a call every week | 1,721 | 61.8% | — |
+| always - a call every week | 1,721 | 61.8% | - |
 | the call is in the strongest 75% | 1,320 | 65.4% | +3.6 pp |
 | the call is in the strongest 50% | 894 | **69.6%** | +7.8 pp |
 | **the call is in the strongest 25%** | 433 | **72.5%** | **+10.8 pp** |
@@ -118,7 +118,7 @@ moment the model runs:
 A desk fixing a handful of cargoes a quarter does not need a call every week, and
 this is the number it should be judged on. The threshold for "the strongest half"
 is a quantile of *earlier* predictions only, so no week is ranked using anything
-from after it — the first 250 scored weeks are ineligible for that reason, which
+from after it - the first 250 scored weeks are ineligible for that reason, which
 is why the *always* row reads 61.8% and not 61.7%. Each tier is significant
 against the best constant call on its own weeks, counted in non-overlapping
 windows and adjusted for testing three tiers. Tiering pure noise the same way
@@ -141,7 +141,7 @@ twice):
 
 Every figure is a share **of the freight rate**. The Baltic series here is an
 index in points, this repository has no sourced conversion to dollars, and
-inventing one would put a fabricated number at the centre of the result — so
+inventing one would put a fabricated number at the centre of the result - so
 supply your own rate and multiply.
 
 The control is the number that matters. Waiting every time *loses* 2.88%, because
@@ -154,7 +154,7 @@ a tie. It also loses on 40% of the weeks it holds, worst single decision
 −110.1%, and holding burns laycan, which is not priced here.
 
 **Where it stops working.** One number over eight years invites exactly one
-question, so here is the answer split by calendar year — the one boundary nobody
+question, so here is the answer split by calendar year - the one boundary nobody
 can accuse us of choosing:
 
 | Year | Direction | Base rate | RMSE skill | Volatility of y | Strongest 50% |
@@ -169,24 +169,24 @@ can accuse us of choosing:
 | **2026** | **56.0%** | 62.0% | **−18.9%** | 12.1% | 55.7% |
 
 RMSE skill is negative in **2 of 9 years**, and direction fails to beat that
-year's own base rate in the same two — a bad year here is bad on every measure at
+year's own base rate in the same two - a bad year here is bad on every measure at
 once. The confidence rule does not rescue them either (2022 at 54.9%, 2026 at
 55.7%): in a bad year the model is confidently wrong. The aggregate is carried by
 2019–2021.
 
 The pattern is not random. Volatility of the target fell from 34.7% across
-2018–2021 to 12.1% in 2026, and RMSE skill is a variance-explained measure — in a
+2018–2021 to 12.1% in 2026, and RMSE skill is a variance-explained measure - in a
 calm market there is little variance to explain and a handful of large misses
 dominate what is left. Direction is scale-free and degrades far more gently.
 That is the fragility this project documented *before* it measured it, which is
 why it asks to be judged on direction.
 
 **Part-load capacity.** A Capesize loads **152,320 t of a possible 176,500 t**
-for Paradip — 86% utilisation, 24,180 t left ashore every voyage. Given only the
+for Paradip - 86% utilisation, 24,180 t left ashore every voyage. Given only the
 berth's draft and no deadweight figure, the model implies 155,820 DWT against a
 documented limit of ~155,000.
 
-**Live port activity.** 11 ports from IMF PortWatch, current to **2026-08-28** —
+**Live port activity.** 11 ports from IMF PortWatch, current to **2026-08-28** -
 one day behind the freight forecast, which now also reaches the present.
 
 **Fleet selection.** Voyage counts are whole numbers, so the cheapest mix is an
@@ -196,23 +196,23 @@ problems small enough to price by hand.
 
 **The empty leg.** A ship with no return cargo sails in ballast, and the owner
 prices that into the rate before you negotiate. Haldia ships out **2.5 kt/day**
-against **44.8** in — a ratio of 0.06 that has never exceeded 0.2 in eight years,
+against **44.8** in - a ratio of 0.06 that has never exceeded 0.2 in eight years,
 so **94%** of arriving tonnage leaves empty. Paradip runs **1.46** and has been
 above parity every year. Priced into the optimiser at 45% of a laden voyage,
 Haldia gets roughly **30% dearer** and Paradip does not move at all. On the
 dashboard's own default costs that is enough to make Paradip the cheapest berth
-despite its 16.0 m draft forcing a Capesize to sail part-laden — the part-load
+despite its 16.0 m draft forcing a Capesize to sail part-laden - the part-load
 penalty is smaller than the empty-leg penalty. The exact figure moves with the
 costs you enter, which is the point: the imbalance is measured, the money is
 yours.
 
 > **The costs are yours, not ours.** This repository has no verified freight,
 > lighterage or haulage figures for this lane. They are required arguments with
-> no defaults — the optimiser is exact over what you give it, and refuses to run
+> no defaults - the optimiser is exact over what you give it, and refuses to run
 > rather than assume a rate. The same rule bounds deliverable (c): the *share* of
 > ships leaving empty is measured, what an empty leg *costs* is not, and **idle
 > time is not modelled at all** because PortWatch publishes arrivals but not
-> departures. A berth with no arrivals feed is priced as `null`, never as zero —
+> departures. A berth with no arrivals feed is priced as `null`, never as zero -
 > otherwise the optimiser would prefer exactly the berths nobody has data on.
 
 ## 🧭 How it is built
@@ -225,14 +225,14 @@ yours.
 | `templates/dashboard.html` | Five-view dashboard; every number arrives via `fetch()`. |
 | `src/fetch_data.py` | Baltic + Yahoo + PortWatch + Open-Meteo → `data/raw` |
 | `src/build_panel.py` | Features and the target definition. |
-| `src/train_model.py` | **Module A** — Capesize direction, walk-forward. |
-| `src/procurement.py` | **Module A, part two** — what the forecast is worth, as a share of the freight rate. |
+| `src/train_model.py` | **Module A** - Capesize direction, walk-forward. |
+| `src/procurement.py` | **Module A, part two** - what the forecast is worth, as a share of the freight rate. |
 | `src/live_model.py` | The BDRY control experiment. |
-| `src/ports.py` | **Module B** — port constraints and part-load capacity. |
-| `src/congestion.py` | **Module B** — live port activity. |
-| `src/risk.py` | **Module B** — risk warnings, measured and otherwise. |
-| `src/optimise.py` | **Module B** — which ships into which berths (MILP). |
-| `src/ballast.py` | **Module B** — the empty return leg. |
+| `src/ports.py` | **Module B** - port constraints and part-load capacity. |
+| `src/congestion.py` | **Module B** - live port activity. |
+| `src/risk.py` | **Module B** - risk warnings, measured and otherwise. |
+| `src/optimise.py` | **Module B** - which ships into which berths (MILP). |
+| `src/ballast.py` | **Module B** - the empty return leg. |
 | `tests/` | 569 checks. See [Testing](#testing). |
 
 ## ⚖️ The rule this repository runs on
@@ -245,13 +245,13 @@ artefact. Nothing is typed into the markup, and a missing artefact returns
 
 Two things follow from taking that seriously:
 
-**We tried to break our own model.** The same method applied to BDRY — a traded
-freight ETF over the same underlying — scores **−11.2%**, worse than assuming no
+**We tried to break our own model.** The same method applied to BDRY - a traded
+freight ETF over the same underlying - scores **−11.2%**, worse than assuming no
 change. That is the correct answer for an arbitraged instrument, and it is why
 the Baltic result is credible rather than suspicious.
 
 **We disproved our own explanation.** The September–December dip in port arrivals
-looked like cyclone season. Tested against Open-Meteo wind, it is not — those are
+looked like cyclone season. Tested against Open-Meteo wind, it is not - those are
 the *calmest* months of the year. Both experiments are written up in
 [`docs/METHOD.md`](docs/METHOD.md).
 
@@ -271,12 +271,12 @@ python -m tests.test_app           # 158 · every API claim, recomputed
 ```
 
 `test_walkforward.py` exists because a mutation test found that inverting the
-purge gap — so the training window overlapped the test window — left every other
+purge gap - so the training window overlapped the test window - left every other
 suite green. It asserts the fold boundaries directly, and checks coverage and
 skill against their *targets* rather than only against what `metrics.json` says.
 
 `test_leakage.py` corrupts every raw input after a cut date, rebuilds the panel
-and requires all earlier features to be bit-identical — catching a centred
+and requires all earlier features to be bit-identical - catching a centred
 window or a negative shift regardless of what it is called. `test_app.py` does
 not trust the API: it recomputes each served claim from the stored artefacts.
 `test_risk.py` injects a 118 km/h forecast to exercise the cyclone path without

@@ -467,6 +467,8 @@ def api_ports():
             'density': p['density'],
             'lighterage': p['lighterage'],
             'geometry_verified': p['geometry_verified'],
+            'state': p.get('state'),
+            'country': p.get('country'),
             'note': p['note'],
         } for n, p in ports.PORTS.items()],
         'matrix': matrix,

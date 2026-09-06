@@ -106,30 +106,36 @@ PORTS = {
     'Gangavaram': dict(
         max_draft=21.0, max_loa=None, max_beam=None, density=1.025,
         lighterage=False, geometry_verified=False,
+        state='Andhra Pradesh', country='India',
         note='Deepest draft on the east coast. Not present in IMF '
              'PortWatch, so it carries no congestion signal here.'),
     'Visakhapatnam': dict(
         max_draft=18.1, max_loa=None, max_beam=None, density=1.025,
         lighterage=False, geometry_verified=False,
+        state='Andhra Pradesh', country='India',
         note='Outer harbour general cargo berth, 356 m quay, built for '
              'imported coking coal. Takes vessels to about 200,000 DWT.'),
     'Dhamra': dict(
         max_draft=18.0, max_loa=None, max_beam=None, density=1.025,
         lighterage=False, geometry_verified=False,
+        state='Odisha', country='India',
         note='Has demonstrated 18.40 m on a 187,000 t coking coal '
              'parcel, so 18.0 m is conservative.'),
     'Paradip': dict(
         max_draft=16.0, max_loa=300.0, max_beam=46.0, density=1.025,
         lighterage=False, geometry_verified=True,
+        state='Odisha', country='India',
         note='Coal berth 16.0 m against a 16.5 m port envelope. LOA and '
              'beam bind here before draft does for the largest classes.'),
     'Gopalpur': dict(
         max_draft=14.5, max_loa=None, max_beam=None, density=1.025,
         lighterage=False, geometry_verified=False,
+        state='Odisha', country='India',
         note='Shallowest of the direct-berth options.'),
     'Haldia': dict(
         max_draft=8.5, max_loa=None, max_beam=None, density=1.010,
         lighterage=False, geometry_verified=False,
+        state='West Bengal', country='India',
         note='Riverine, on the Hooghly. Silts to 7.0-7.5 m between '
              'dredging campaigns, and brackish water costs further '
              'draft. The river approach also imposes length and channel '
@@ -140,6 +146,7 @@ PORTS = {
     'Sagar-Sandheads': dict(
         max_draft=None, max_loa=None, max_beam=None, density=1.025,
         lighterage=True, geometry_verified=True,
+        state='West Bengal', country='India',
         note='An ANCHORAGE in 40-50 m of water, not a berth. Capesizes '
              'anchor and floating cranes discharge into barges for '
              'Haldia. Modelling it as a deep-draft port inverts the '

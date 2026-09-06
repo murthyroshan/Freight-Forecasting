@@ -37,7 +37,7 @@
 </script>
 <style>
 /* ─────────────────────────────────────────────────────────
-   Warm industrial palette — the colours of the trade itself:
+   Warm industrial palette - the colours of the trade itself:
    iron-ore rust, mill paper, coal-black ink. The two series
    hues (rust #c2410c, aqua #0e7f57) were run through the
    palette validator against this exact paper surface: CVD
@@ -397,7 +397,7 @@ footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--rule);font-si
 code{font-family:var(--fm);font-size:11px;background:var(--sunk);padding:1px 5px;border-radius:2px}
 
 /* The native date input renders in the BROWSER's locale, not the page's
-   - Chrome ignores lang="en-GB" for this - so on a machine set to en-US
+ - Chrome ignores lang="en-GB" for this - so on a machine set to en-US
    it showed 08/27/2026 while every other date on the page read
    27/08/2026. The field is plain text in DD/MM/YYYY now, with the
    native picker kept behind a button so the calendar is not lost. */
@@ -862,6 +862,120 @@ body::after{
   opacity:.55; transition:opacity .4s ease;
 }
 .rig-stage.touched .rig-hint{ opacity:0; }
+
+/* ══════════════════════════════════════════════════════════════════
+   PASS 1 · MATERIAL
+
+   The light theme declared --hairline, --glow, --mesh-a, --mesh-b and
+   --grain and then set every one of them to transparent or zero, so
+   the whole atmosphere layer only ever ran in dark. Light was a flat
+   off-white page with 5%-opacity shadows and hairline borders, which
+   is exactly why it read as unfinished next to the dark version.
+
+   Depth here is built the way it works physically: a tight contact
+   shadow, a wide ambient one, a lit top edge, and a surface that is
+   fractionally brighter at the top than the bottom. Warm-tinted rather
+   than black, because a neutral shadow on warm paper reads as dirt.
+   ══════════════════════════════════════════════════════════════════ */
+:root{
+  /* Two shadows, not one. The tight one anchors the card to the page;
+     the wide one gives it height. A single blurred shadow always reads
+     as a sticker. */
+  --elev-1:0 1px 1.5px rgba(74,56,42,.045), 0 2px 5px -1px rgba(74,56,42,.045);
+  --elev-2:0 16px 38px -12px rgba(74,56,42,.15),
+           0 5px 14px -6px rgba(74,56,42,.07);
+  --elev-3:0 30px 70px -22px rgba(74,56,42,.22),
+           0 10px 24px -10px rgba(74,56,42,.10);
+  --hairline:rgba(255,255,255,.95);
+  --glow:rgba(194,65,12,.20);
+  --mesh-a:rgba(194,65,12,.062);
+  --mesh-b:rgba(14,127,87,.05);
+  --grain:.016;
+
+  /* One motion vocabulary for the whole page. Everything that moves
+     from here on picks from these four, so nothing arrives on its own
+     clock. */
+  --e-out:cubic-bezier(.22,.61,.36,1);      /* the default */
+  --e-spring:cubic-bezier(.34,1.32,.46,1);  /* things that pop in */
+  --e-swift:cubic-bezier(.4,0,.2,1);        /* short, mechanical */
+  --e-glide:cubic-bezier(.16,1,.3,1);       /* long, expensive */
+  --t-fast:.16s; --t-mid:.32s; --t-slow:.6s;
+}
+[data-theme="dark"]{
+  --elev-3:0 40px 90px -24px rgba(0,0,0,.8), 0 12px 28px -10px rgba(0,0,0,.6);
+}
+
+/* The ambient wash gets a third source and a slow drift. It is fixed
+   and behind everything, so it costs one composited layer and never
+   reflows. */
+body::before{
+  background:
+    radial-gradient(1200px 680px at 10% -10%, var(--mesh-a), transparent 60%),
+    radial-gradient(980px 600px at 94% 2%,  var(--mesh-b), transparent 58%),
+    radial-gradient(760px 520px at 50% 108%, var(--mesh-a), transparent 62%);
+  animation:drift 34s var(--e-swift) infinite alternate;
+}
+@keyframes drift{
+  from{ transform:translate3d(0,0,0) scale(1) }
+  to  { transform:translate3d(0,-1.4%,0) scale(1.045) }
+}
+
+/* The dot grid was --rule at full strength every 22px, which is a
+   loud texture for a page of small numbers. Softer, larger, and it
+   fades out down the page so the top has more air than the bottom. */
+body{
+  background-image:radial-gradient(color-mix(in srgb, var(--rule) 55%,
+                                   transparent) .55px, transparent .55px);
+  background-size:26px 26px;
+}
+
+/* ── the card surface ─────────────────────────────────────────────
+   A real sheet: brighter along the top where the light lands, a lit
+   top edge, and a border that is not the same weight all the way
+   round. 10px instead of 4px - the small radius was the single most
+   dated thing on the page. */
+.card{
+  border-radius:10px;
+  background:linear-gradient(177deg, var(--lift) 0%, var(--card) 44%);
+  transition:box-shadow var(--t-mid) var(--e-out),
+             border-color var(--t-mid) var(--e-out),
+             transform var(--t-mid) var(--e-out);
+}
+.card::before{
+  height:1px; left:10px; right:10px;
+  background:linear-gradient(90deg, transparent, var(--hairline) 22%,
+                             var(--hairline) 78%, transparent);
+  border-radius:0;
+}
+/* Deepen rather than lift. A page of eleven cards that all rise on
+   hover feels like a toy; the shadow alone reads as attention. */
+.card:hover{ box-shadow:var(--elev-1), var(--elev-3);
+             border-color:var(--rule-2); }
+
+/* Anything that sits on the sunk surface gets the inverse treatment -
+   pressed in, not raised. */
+.rig, .mast{ border-radius:12px; }
+
+/* ── the sticky header ────────────────────────────────────────────
+   Real glass: blur, a touch of saturation so colour survives it, and
+   a hairline under it that only appears once the page has moved. */
+.top{
+  backdrop-filter:blur(20px) saturate(1.5);
+  -webkit-backdrop-filter:blur(20px) saturate(1.5);
+  border-bottom-color:transparent;
+  transition:border-color var(--t-mid) var(--e-out),
+             box-shadow var(--t-mid) var(--e-out);
+}
+.top.stuck{
+  border-bottom-color:var(--rule);
+  box-shadow:0 10px 30px -18px rgba(74,56,42,.35);
+}
+[data-theme="dark"] .top.stuck{ box-shadow:0 10px 30px -14px rgba(0,0,0,.7); }
+
+@media (prefers-reduced-motion:reduce){
+  body::before{ animation:none!important }
+  .card{ transition:none!important }
+}
 </style>
 
 <div class="wrap">
@@ -909,7 +1023,7 @@ body::after{
         </div>
         <p class="mast-note">Every call above was made before its outcome was
           known. <a href="#proof">The full record</a>
-          &mdash; winning years and losing ones.</p>
+ - winning years and losing ones.</p>
       </div>
       <div class="mast-r stage" id="stage">
         <svg viewBox="0 0 460 300" class="stage-in" id="stageIn" role="img"
@@ -997,7 +1111,7 @@ body::after{
     <div class="rig">
       <div class="rig-stage" id="rigStage">
         <canvas id="rigCanvas"></canvas>
-        <div class="rig-hint" id="rigHint">Drag to turn her</div>
+        <div class="rig-hint" id="rigHint">Drag to turn the vessel</div>
       </div>
       <div class="rig-side">
         <div>
@@ -1016,10 +1130,10 @@ body::after{
             <div class="rig-limit" id="rigLimit" style="left:88%"></div>
           </div>
           <div class="rig-note" style="margin-top:6px" id="rigVerdict">
-            Paradip permits 16.0 m. Empty she floats well clear.
+            Paradip permits 16.0 m. Empty, the vessel floats well clear.
           </div>
         </div>
-        <button class="rig-btn" id="rigBtn" type="button">Load her</button>
+        <button class="rig-btn" id="rigBtn" type="button">Load the vessel</button>
       </div>
     </div>
 
@@ -1051,12 +1165,12 @@ body::after{
       <div class="card">
         <div class="cap">Replay a past decision &middot; the outcome is known</div>
         <p class="note" style="margin:0 0 10px">Pick a date and the model returns
-          the forecast it made <em>at that moment</em> — fitted only on data
-          before it, with a five-day purge gap — and the outcome beside it.
+          the forecast it made <em>at that moment</em> - fitted only on data
+          before it, with a five-day purge gap - and the outcome beside it.
           <b>Two models cover this range</b>: the licensed Baltic years to
           24/07/2019, which score 64.9%, and the extended series after, which
           score 61.7%. Every call names the one that answered it and quotes
-          <em>that</em> model's accuracy — there is no combined figure, because
+          <em>that</em> model's accuracy - there is no combined figure, because
           an average would describe neither. History starts in
           <b id="replayFrom">&mdash;</b> although the panel begins in 2012: the
           earlier days trained the first fold, and a walk-forward model cannot
@@ -1072,12 +1186,12 @@ body::after{
           </div>
           <div class="hint" id="dateEcho"></div>
         </div>
-        <div class="f"><label>Negotiated rate — $ per tonne</label>
+        <div class="f"><label>Negotiated rate - $ per tonne</label>
           <input type="number" id="current_rate" value="42.50" step="0.01"></div>
-        <div class="f"><label>Shipment volume — tonnes</label>
+        <div class="f"><label>Shipment volume - tonnes</label>
           <input type="number" id="volume" value="160000" step="1000">
           <div class="hint">Brent, copper, the dollar and owner equities are read
-            from the data for this date — model inputs, not fields you fill in.</div></div>
+            from the data for this date - model inputs, not fields you fill in.</div></div>
         <div id="recResult"></div>
       </div>
       <div class="card">
@@ -1092,13 +1206,13 @@ body::after{
     <div class="lede">
       <h2>Which ship, into which berth</h2>
       <p>A laden Capesize draws 18.2 m. Paradip's coal berth permits 16.0 m. That
-        does not rule the ship out — it arrives <em>part-laden</em>. How much cargo
+        does not rule the ship out - it arrives <em>part-laden</em>. How much cargo
         it can carry is set by TPC, tonnes per centimetre of immersion.</p>
     </div>
     <div class="split">
       <div class="card">
         <div class="cap">Parcel</div>
-        <div class="f"><label>Parcel size — tonnes</label>
+        <div class="f"><label>Parcel size - tonnes</label>
           <input type="number" id="parcel_t" value="160000" step="1000" min="1"></div>
         <div id="portBest"></div>
       </div>
@@ -1117,14 +1231,14 @@ body::after{
         <tbody id="portOptBody"><tr><td colspan="7"><span class="skel"></span></td></tr></tbody>
       </table></div>
       <p class="note"><b>Fill</b> is how much of the capacity you charter this parcel
-        actually uses — not how full each ship could be. Ranking on the latter calls
+        actually uses - not how full each ship could be. Ranking on the latter calls
         a Capesize and a Newcastlemax equally good and quietly recommends the more
         expensive one.</p>
     </div>
     <div class="card">
       <div class="cap">Cheapest fleet for this parcel
         <span class="tag t-warn" style="margin-left:8px">YOUR COSTS</span></div>
-      <p class="money">The capacities above are <b>computed physics</b> &mdash; draft, TPC and
+      <p class="money">The capacities above are <b>computed physics</b> - draft, TPC and
         dock water allowance. The costs below are <b>not ours</b>. This project has no
         verified freight, lighterage or haulage figures for this lane, and inventing
         them would make every number here fiction. The values shown are
@@ -1165,7 +1279,7 @@ body::after{
     <div class="lede">
       <h2>What the berths are doing now</h2>
       <p>Vessel arrivals from IMF PortWatch, derived from AIS.
-        <b>Current to last week</b> — as is the freight forecast beside it, since
+        <b>Current to last week</b> - as is the freight forecast beside it, since
         the Baltic series is now spliced to the present. Every port is scored against
         <em>its own</em> past. The Indian berths are where the decision is made; load
         terminals usually arrive with the coal supply contract, so they are watched
@@ -1173,9 +1287,9 @@ body::after{
     </div>
     <div class="card">
       <div class="cap">Live activity</div>
-      <div class="gl">Discharge — east coast India</div>
+      <div class="gl">Discharge - east coast India</div>
       <div class="pg" id="congCards"></div>
-      <div class="gl">Load — Australia, US <span>(watched for risk)</span></div>
+      <div class="gl">Load - Australia, US <span>(watched for risk)</span></div>
       <div class="pg" id="congLoadCards"></div>
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:20px 0 12px">
         <label style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)">Chart port</label>
@@ -1186,7 +1300,7 @@ body::after{
     <div class="card">
       <div class="cap">The empty leg · can a ship find a cargo home?</div>
       <p class="note" style="margin:0 0 10px">A vessel with no return cargo sails in
-        ballast &mdash; earning nothing, still burning fuel. The owner prices that into
+        ballast - earning nothing, still burning fuel. The owner prices that into
         the rate before you negotiate, so the berth you pick changes the freight you
         are offered. <b>Measured:</b> tonnage in against tonnage out.
         <b>Not measured:</b> waiting time, which PortWatch cannot give us.</p>
@@ -1214,7 +1328,7 @@ body::after{
       <p>Four signals, and the line between them matters more than the count.
         A warning marked <b>MEASURED</b> has an effect size this repository
         quantified and significance-tested. One marked <b>CONTEXT</b> is a real
-        observation with <em>no</em> measured effect — reported so a desk can
+        observation with <em>no</em> measured effect - reported so a desk can
         weigh it, never as a prediction. Mixing the two is how a risk panel
         becomes decoration.</p>
     </div>
@@ -1240,7 +1354,7 @@ body::after{
       <h2>When to book</h2>
       <p>The days the model actually forecast, ranked cheapest to dearest, with
         what the difference costs on your parcel. Days outside the horizon are
-        left blank — a calendar that colours next August is claiming to know
+        left blank - a calendar that colours next August is claiming to know
         something no model here was fitted for.</p>
     </div>
 
@@ -1252,11 +1366,11 @@ body::after{
         The percentage they multiply is measured here; the dollar in rupees is
         read from the panel, not typed into a constant.</p>
       <div class="grid3">
-        <div class="f"><label>Parcel — tonnes per shipment</label>
+        <div class="f"><label>Parcel - tonnes per shipment</label>
           <input type="number" id="bk_parcel" value="160000" step="1000" min="1"></div>
-        <div class="f"><label>Annual programme — tonnes</label>
+        <div class="f"><label>Annual programme - tonnes</label>
           <input type="number" id="bk_annual" value="10000000" step="100000" min="1"></div>
-        <div class="f"><label>Freight rate — $ per tonne</label>
+        <div class="f"><label>Freight rate - $ per tonne</label>
           <input type="number" id="bk_rate" value="20.00" step="0.5" min="0.01"></div>
       </div>
     </div>
@@ -1315,7 +1429,7 @@ body::after{
     <div class="card">
       <div class="cap">Walk-forward validation · every fold</div>
       <p class="note" style="margin:0 0 8px">Each fold trains only on data before its
-        test window, with a five-day purge gap. RMSE of the five-day log return —
+        test window, with a five-day purge gap. RMSE of the five-day log return -
         lower is better. Shown in full, including the folds we lose.</p>
       <div class="scroll"><table>
         <thead><tr><th>Fold</th><th>Test window</th><th class="n">No change</th>
@@ -1327,7 +1441,7 @@ body::after{
     <div class="card">
       <div class="cap">Direction accuracy by confidence &middot; the model may stay quiet</div>
       <p class="note" style="margin:0 0 8px">A chartering desk fixes a handful of cargoes a
-        quarter, so the number that matters is not the average call &mdash; it is whether the
+        quarter, so the number that matters is not the average call - it is whether the
         calls it acts on beat the ones it declines to make. Confidence here is the size of the
         prediction, which is known the moment the model runs and needs no outcome. The threshold
         for &ldquo;the strongest half&rdquo; is a quantile of <em>earlier</em> predictions only,
@@ -1348,7 +1462,7 @@ body::after{
       <div class="cap">What the forecast was worth &middot; simulated procurement</div>
       <p class="note" style="margin:0 0 8px">Direction accuracy is a statistic; a steel producer
         buys freight. So: a cargo has to move, and the desk either fixes today or holds one
-        forecast horizon and fixes then. Every figure is a share <em>of the freight rate</em> —
+        forecast horizon and fixes then. Every figure is a share <em>of the freight rate</em> -
         the Baltic series here is an index in points, this repository has no sourced conversion
         to dollars, and inventing one would put a fabricated number at the centre of the result.
         Decisions are spaced a full horizon apart, so no market move is counted twice.</p>
@@ -1364,7 +1478,7 @@ body::after{
     <div class="card">
       <div class="cap">Where it works, and where it stops &middot; every year, including the bad ones</div>
       <p class="note" style="margin:0 0 8px">One number over eight years invites exactly one
-        question — <em>does it still work?</em> — and answering from the same average is not an
+        question - <em>does it still work?</em> - and answering from the same average is not an
         answer. Split by calendar year, which nobody can accuse us of choosing. The two columns
         disagree, and that disagreement is the point: RMSE skill measures variance explained, so
         it falls apart in a calm market where there is little variance to explain and a few large
@@ -1384,7 +1498,7 @@ body::after{
       <p class="note" style="margin:0 0 8px">The Baltic Capesize index is a daily broker
         <em>survey</em>; panellists anchor on the previous print, so its returns are
         autocorrelated and genuinely forecastable. BDRY is a liquid, arbitraged ETF over
-        the same underlying. We ran the identical method on it — scoring well there too
+        the same underlying. We ran the identical method on it - scoring well there too
         would mean claiming to beat a futures market, which is a red flag rather than a
         feature.</p>
       <div class="scroll"><table>
@@ -1414,7 +1528,7 @@ const pct = v => (v === null || v === undefined || !isFinite(v))
 // Named 'fin', not 'num': predict() has its own local num(id) reading a
 // form field, and a same-named global is shadowed inside it. Sharing the
 // name turned num(r.lo_pct) into getElementById(0.9).value, which threw
-// part-way through rendering — the chart drew, the recommendation did not.
+// part-way through rendering - the chart drew, the recommendation did not.
 const fin = v => (v === null || v === undefined || !isFinite(v)) ? null : v;
 
 // The API speaks ISO (sortable, unambiguous, correct on the wire).
@@ -1508,7 +1622,7 @@ const nloc = v => (v === null || v === undefined || !isFinite(v))
     ? '\u2014' : Number(v).toLocaleString();
 const rkTitle = t => String(t || '').split('_')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-// 1st/2nd/3rd/4th, and 11–13 are always "th" — otherwise the 53rd
+// 1st/2nd/3rd/4th, and 11–13 are always "th" - otherwise the 53rd
 // percentile renders as "53th".
 const ordinal = n => {
     n = Math.round(n);
@@ -1531,8 +1645,8 @@ let BAND = 'rgba(194,65,12,.07)', BAND_LINE = 'rgba(194,65,12,.30)';
 
 function countUp(el, target, render) {
     // Write the real value FIRST. The animation is decoration; if
-    // requestAnimationFrame never fires — a background tab, a throttled
-    // renderer — the correct figure is already on screen.
+    // requestAnimationFrame never fires - a background tab, a throttled
+    // renderer - the correct figure is already on screen.
     el.textContent = render(target);
     if (matchMedia('(prefers-reduced-motion: reduce)').matches || !isFinite(target)) return;
     const t0 = performance.now(), D = 850;
@@ -1685,7 +1799,7 @@ async function predict() {
           As of <b>${fmtDate(r.as_of)}</b>, Capesize index <b>${nloc(r.capesize_index)}</b>.<br>
           Forecast over ${r.horizon_days} trading days: <b>${pct(r.expected_move_pct)}</b>
           &nbsp;(${band})<br>
-          <b>$${r.current_rate}</b>/t &rarr; <b>$${r.projected_rate}</b>/t —
+          <b>$${r.current_rate}</b>/t &rarr; <b>$${r.projected_rate}</b>/t -
           ${r.direction === 'up' ? 'rates rising, fix now' : 'rates easing, hold and re-approach'}.<br>
           Move at risk on this parcel:
           <b>${fin(r.exposure) === null ? '—' : '$' + r.exposure.toLocaleString()}</b>
@@ -1696,11 +1810,11 @@ async function predict() {
           outcome ${r.inside_interval ? 'inside' : '<b>outside</b>'} the ${r.interval_pct}% interval.</div>
         ${!r.source ? '' : `<div class="truth" style="margin-top:6px">
           <b style="color:var(--ink-2)">Answered by:</b> the
-          <b>${rkEsc(r.source.name)}</b> model — ${rkEsc(r.source.basis)}.
+          <b>${rkEsc(r.source.name)}</b> model - ${rkEsc(r.source.basis)}.
           It scores <b>${nfix(r.source.direction_pct, 1)}%</b> direction over
           ${fmtDate(r.source.scored_from)} to ${fmtDate(r.source.scored_to)}
           (${nloc(r.source.n_scored)} weeks). Two models cover this chart and
-          that figure is <b>this one's</b> — they are never averaged.</div>`}
+          that figure is <b>this one's</b> - they are never averaged.</div>`}
       </div>`;
 }
 
@@ -1725,7 +1839,7 @@ async function loadMetrics() {
         document.getElementById('m_provenance').innerHTML =
             `<b>${m.best_model}</b> on ${m.target}, trained ${fmtDate(m.train_start)} to `
             + `${fmtDate(m.train_end)}. ${m.n_scored} out-of-sample rows across ${m.n_folds} `
-            + `folds — but only <b>~${m.n_effective} independent</b> windows, because `
+            + `folds - but only <b>~${m.n_effective} independent</b> windows, because `
             + `five-day targets overlap. Direction significance is computed on that smaller `
             + `number: p = ${dt.p_value.toExponential(1)}.`;
 
@@ -1776,7 +1890,7 @@ function fillConfidence(c) {
     const lift = v => (v === null || v === undefined || !isFinite(v))
         ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + 'pp';
     document.getElementById('c_burn').textContent = nloc(c.min_history);
-    const rows = ['<tr><td>always &mdash; a call every week</td>'
+    const rows = ['<tr><td>always - a call every week</td>'
         + '<td class="n">' + nloc(c.n_eligible) + '</td>'
         + '<td class="n">' + nfix(c.all_direction * 100, 1) + '%</td>'
         + '<td class="n">&mdash;</td><td class="n">&mdash;</td><td></td></tr>'];
@@ -1792,7 +1906,7 @@ function fillConfidence(c) {
     });
     body.innerHTML = rows.join('');
     const top = c.tiers[c.tiers.length - 1];
-    note.textContent = 'Tiered on the ' + c.model + ' model — the same one the figures '
+    note.textContent = 'Tiered on the ' + c.model + ' model - the same one the figures '
         + 'above report. Each p-value tests that tier against the best constant call on those '
         + 'same weeks, not against a coin, counted in non-overlapping windows ('
         + top.n_effective + ' of them in the narrowest tier) and adjusted for testing '
@@ -1809,7 +1923,7 @@ function momentumTie(m) {
     // difference anyone should lean on, so it is named as a tie.
     const level = Math.abs(gap) < 0.25;
     return ', and on direction the two are ' + (level ? 'level' : 'close')
-        + ' &mdash; <b>' + nfix(mine.direction_pct, 1) + '%</b> against <b>'
+        + ' - <b>' + nfix(mine.direction_pct, 1) + '%</b> against <b>'
         + nfix(naive.direction_pct, 1) + '%</b>. The model earns its place on '
         + 'RMSE skill (<b>' + nfix(mine.skill_vs_zero_pct, 1) + '%</b> against <b>'
         + nfix(naive.skill_vs_zero_pct, 1) + '%</b>): better-calibrated size, '
@@ -1854,7 +1968,7 @@ async function fillProcurement(pr, m) {
             + 'beat fixing today (p = ' + nfix(r.p_vs_zero, 3) + ') and beat waiting every '
             + 'time (p &lt; 0.0001), capturing <b>' + nfix(r.capture_pct, 0) + '%</b> of what '
             + 'perfect foresight would have taken. Waiting every time <em>loses</em> '
-            + pct(r.control.saved_pct) + ', because the index rose across this period — so the '
+            + pct(r.control.saved_pct) + ', because the index rose across this period - so the '
             + 'saving is a forecast, not a drift being harvested.'
             + (tie ? ' <b>It is not distinguishable from the momentum rule on money</b> (p = '
                 + nfix(r.p_vs_momentum, 2) + ')' + momentumTie(m) + '' : '');
@@ -1863,7 +1977,7 @@ async function fillProcurement(pr, m) {
             + 'it holds, worst single decision ' + pct(r.model_policy.worst_pct) + '. Holding '
             + 'also burns laycan and risks the vessel, which is not priced here, so this bounds '
             + 'the rate component alone. At a freight rate of $20/t it is worth about $'
-            + nfix(r.model_policy.saved_pct / 100 * 20, 2) + '/t — supply your own rate, none '
+            + nfix(r.model_policy.saved_pct / 100 * 20, 2) + '/t - supply your own rate, none '
             + 'is asserted.';
     } catch (e) {
         stall('procurement backtest unavailable');
@@ -1894,7 +2008,7 @@ function fillRegimes(g) {
             + '<td class="n" style="opacity:.7">' + nfix(r.volatility_pct, 1) + '%</td>'
             + '<td class="n"' + (beats ? '' : ' style="opacity:.7"') + '>'
             + (r.strong_direction_pct === null || r.strong_direction_pct === undefined
-                ? '&mdash;' : nfix(r.strong_direction_pct, 1) + '%') + '</td></tr>'; }).join('');
+                ? ' - ' : nfix(r.strong_direction_pct, 1) + '%') + '</td></tr>'; }).join('');
 
     // Counted, never asserted. An earlier draft of this note claimed
     // direction held above the base rate in every year; the table
@@ -1909,14 +2023,14 @@ function fillRegimes(g) {
     let t = '';
     if (weak.length) {
         t = 'RMSE skill is <b>negative in ' + weak.length + ' of ' + g.rows.length
-            + ' years</b> (' + yrs(weak) + '), and the calm years are where it goes — there is '
+            + ' years</b> (' + yrs(weak) + '), and the calm years are where it goes - there is '
             + 'little variance left to explain. ';
     }
     t += 'Direction beats that year&rsquo;s own base rate in <b>'
         + (g.rows.length - below.length) + ' of ' + g.rows.length + ' years</b>'
         + (below.length
             ? '. It does not in ' + yrs(below) + ', where always saying &ldquo;up&rdquo; would '
-              + 'have scored better — and those are ' + (below.length === weak.length
+              + 'have scored better - and those are ' + (below.length === weak.length
                   && below.every(r => r.skill_pct < 0)
                   ? 'the same years the skill column fails. A bad year here is bad on every '
                     + 'measure at once, not on one of them.'
@@ -2023,7 +2137,7 @@ async function loadAhead() {
                              && !worthIt)) {
             cls = 'vd-none'; word = 'No clear call';
             line = 'The model expects the rate to move around and end up near '
-                 + 'where it started — ' + pct(soonest.expected_move_pct)
+                 + 'where it started - ' + pct(soonest.expected_move_pct)
                  + ' at the next opportunity against '
                  + pct(cheapest.expected_move_pct) + ' at its cheapest, a gap of '
                  + nfix(Math.abs(gap), 2) + '% inside a typical '
@@ -2032,7 +2146,7 @@ async function loadAhead() {
                  + 'and laycan, not on this</b>.';
         } else if (cheapest.horizon_days === soonest.horizon_days) {
             cls = 'vd-go'; word = 'Fix early';
-            line = 'The model expects the rate to <b>rise</b> from here — '
+            line = 'The model expects the rate to <b>rise</b> from here - '
                  + pct(soonest.expected_move_pct) + ' by ' + fmtDate(soonest.target_date)
                  + ' and ' + pct(dearest.expected_move_pct) + ' by '
                  + fmtDate(dearest.target_date) + '. The soonest day is the '
@@ -2043,7 +2157,7 @@ async function loadAhead() {
                  + fmtDate(cheapest.target_date) + '</b> ('
                  + pct(cheapest.expected_move_pct) + '), against '
                  + pct(soonest.expected_move_pct) + ' if you fix at the next '
-                 + 'opportunity — a gap of ' + nfix(gap, 2) + '%, which clears '
+                 + 'opportunity - a gap of ' + nfix(gap, 2) + '%, which clears '
                  + 'its own uncertainty. Holding is expected to pay here.';
         }
 
@@ -2134,7 +2248,7 @@ async function loadAhead() {
             t += 'In ' + cy.period + ' so far the model has called direction '
                 + nfix(cy.direction_pct, 1) + '% against a ' + nfix(cy.base_rate_pct, 1)
                 + '% base rate, with ' + pct(cy.skill_pct) + ' RMSE skill'
-                + (losing ? ' — <b>a year it is not beating</b>. The forecast above is '
+                + (losing ? ' - <b>a year it is not beating</b>. The forecast above is '
                     + 'published with that beside it, not in spite of it.' : '.');
         }
         caveat.innerHTML = t;
@@ -2225,7 +2339,7 @@ async function loadBooking() {
         legend.innerHTML = 'Ranked from the close of <b>' + fmtDate(d.as_of)
             + '</b>. <span class="tag t-good">BOOK</span> cheapest third, '
             + '<span class="tag t-warn">WATCH</span> middle, '
-            + '<span class="tag t-bad">AVOID</span> dearest third — of the '
+            + '<span class="tag t-bad">AVOID</span> dearest third - of the '
             + d.days.length + ' days the model forecast.';
 
         // The line that stops the colours being over-read. Computed, so
@@ -2235,7 +2349,7 @@ async function loadBooking() {
             scope += 'The spread across the window is <b>' + nfix(d.spread_pct, 2)
                 + '%</b>, narrower than the typical ' + d.interval_pct
                 + '% interval on a single day (<b>' + nfix(d.typical_interval_pct, 1)
-                + '%</b>) — so these colours rank days by expectation. They do '
+                + '%</b>) - so these colours rank days by expectation. They do '
                 + '<b>not</b> establish that one day will be cheaper than another.';
         }
         document.getElementById('bk_scope').innerHTML = scope;
@@ -2245,7 +2359,7 @@ async function loadBooking() {
             + x.horizon_days + 'd)</span></td>'
             + '<td class="n">' + pct(x.expected_move_pct) + '</td>'
             + '<td class="n">' + (x.worse_than_best_pct > 1e-9
-                ? '+' + nfix(x.worse_than_best_pct, 2) + '%' : '&mdash;') + '</td>'
+                ? '+' + nfix(x.worse_than_best_pct, 2) + '%' : ' - ') + '</td>'
             + '<td class="n">' + (x.extra_cost_usd > 0
                 ? '$' + Math.round(x.extra_cost_usd).toLocaleString()
                 : '<span class="tag t-good">cheapest</span>') + '</td></tr>').join('');
@@ -2256,8 +2370,8 @@ async function loadBooking() {
                 '\u20b9' + nfix(im.annual_crore, 2) + ' crore';
             document.getElementById('bk_impact').innerHTML =
                 '<b>' + nfix(im.saved_pct, 2) + '%</b> of the freight rate per '
-                + 'fixture — measured here over ' + nloc(d.n_fixtures)
-                + ' independent fixtures (p = ' + nfix(d.saved_p_value, 3) + ') — applied to <b>'
+                + 'fixture - measured here over ' + nloc(d.n_fixtures)
+                + ' independent fixtures (p = ' + nfix(d.saved_p_value, 3) + ') - applied to <b>'
                 + nloc(im.tonnes_per_year) + '</b> tonnes a year at <b>$'
                 + nfix(im.rate_usd_per_t, 2) + '</b>/t, converted at USD/INR <b>'
                 + nfix(im.usd_inr, 2) + '</b> read from the panel on '
@@ -2299,7 +2413,7 @@ async function loadSeasonal() {
         const near = d.months.filter(m => m.verdict === 'large, not proven');
         document.getElementById('bk_seasnote').innerHTML =
             'The realised ' + d.horizon_days + '-day move by the month the decision '
-            + 'falls in, 2012&ndash;2026. <b>Descriptive, not a forecast</b> — this is '
+            + 'falls in, 2012&ndash;2026. <b>Descriptive, not a forecast</b> - this is '
             + 'what past Septembers did, not what this one will. Overlapping windows '
             + 'mean ' + nloc(d.n_total) + ' rows are far fewer observations, so every '
             + 'test uses the effective count, and the p-values are adjusted for testing '
@@ -2724,7 +2838,7 @@ function initShip() {
 }
 
 // ═══════════ the rig ═══════════
-// Drag to turn her, click to load her. The tonnage and the draft are
+// Drag to rotate, click to load the vessel. The tonnage and the draft are
 // the real part-load arithmetic - a Capesize is 176,500 t deadweight
 // and draws 18.2 m at it, Paradip's coal berth permits 16.0 m, and the
 // difference is the cargo that has to stay ashore. Watching the hull
@@ -2967,11 +3081,11 @@ function initRig() {
         el('rigLimit').style.left = ((BERTH_M / LADEN_M) * 100).toFixed(1) + '%';
         el('rigVerdict').innerHTML = over
             ? 'Over Paradip\u2019s <b>16.0 m</b> by ' + (d - BERTH_M).toFixed(1)
-              + ' m. She sails part-laden at <b>' + FITS_PARADIP.toLocaleString()
-              + ' t</b> \u2014 <b>' + (DWT - FITS_PARADIP).toLocaleString()
+              + ' m. The vessel sails part-laden at <b>' + FITS_PARADIP.toLocaleString()
+              + ' t</b> - <b>' + (DWT - FITS_PARADIP).toLocaleString()
               + ' t</b> left ashore, every voyage.'
-            : 'Paradip permits <b>16.0 m</b>. Empty she floats well clear.';
-        btn.textContent = laden ? 'Discharge her' : 'Load her';
+            : 'Paradip permits <b>16.0 m</b>. Empty, the vessel floats well clear.';
+        btn.textContent = laden ? 'Discharge vessel' : 'Load the vessel';
     };
 
     btn.addEventListener('click', () => {
@@ -3302,6 +3416,7 @@ async function loadPortMatrix() {
         document.getElementById('portMatrixHead').innerHTML =
             '<th>Class</th><th class="n">TPC t/cm</th>'
             + d.ports.map(p => `<th class="n" title="${esc(p.note)}">${p.name}${
+                p.state ? `<br><span style="font-weight:500;font-size:10px;color:var(--ink-4);letter-spacing:0.02em">${p.state}, ${p.country}</span>` : ''}${
                 p.max_draft_m === null ? '' :
                 `<br><span style="font-weight:400;color:var(--ink-3)">${p.max_draft_m.toFixed(1)} m</span>`
               }</th>`).join('');
@@ -3364,7 +3479,7 @@ function drawDraft(opt) {
       <rect x="0" y="${bedY}" width="${W}" height="${H-bedY}" fill="url(#bed)"/>
       <line x1="0" y1="${bedY}" x2="${W}" y2="${bedY}" stroke="#6b6155" stroke-width="1.5"/>
       <text x="12" y="${bedY-8}" fill="#6b6155" font-size="10.5" font-family="var(--fm)">${
-        permitted === null ? 'anchorage — no draft limit' : 'berth ' + permitted.toFixed(1) + ' m'}</text>
+        permitted === null ? 'anchorage - no draft limit' : 'berth ' + permitted.toFixed(1) + ' m'}</text>
 
       <g class="hull" transform="translate(176,0)">
         <path d="M4 ${waterY-34} L206 ${waterY-34} L214 ${waterY} L198 ${sailY-6}
@@ -3396,7 +3511,7 @@ function drawDraft(opt) {
          limit applies and it loads to its full ${tons(opt.max_cargo_t)} t.`
       : shed <= 0.01
         ? `<b>${opt.vessel}</b> floats at its full laden ${laden.toFixed(1)} m and the
-           berth permits ${permitted.toFixed(1)} m — draft is not binding, so it loads
+           berth permits ${permitted.toFixed(1)} m - draft is not binding, so it loads
            to deadweight.`
         : `<b>${opt.vessel}</b> would draw ${laden.toFixed(1)} m fully laden but the berth
            permits only ${permitted.toFixed(1)} m. It sails <b>${shed.toFixed(1)} m
@@ -3473,11 +3588,11 @@ let congChart = null;
 // thing this project says it never does.
 function cycloneProse(c) {
     if (!c) {
-        return '<b>the cyclone test could not run</b> — the weather history '
+        return '<b>the cyclone test could not run</b> - the weather history '
              + 'for this port is not present.';
     }
     const share = 100 * c.gust_days_sep_dec / Math.max(c.sep_dec_days, 1);
-    return '<b>Cyclones do stop ships</b> — on the day of and before a gust '
+    return '<b>Cyclones do stop ships</b> - on the day of and before a gust '
          + 'above ' + nfix(c.gust_kmh, 0) + ' km/h, ' + rkTitle(c.port)
          + ' arrivals fall <b>' + nfix(Math.abs(c.change_pct), 0) + '%</b> ('
          + nfix(c.storm_calls_per_day, 2) + ' against ' + nfix(c.normal_calls_per_day, 2)
@@ -3487,7 +3602,7 @@ function cycloneProse(c) {
          + '. <b>But they cannot explain the season:</b> only ' + c.gust_days
          + ' such days occur in the whole record, ' + c.gust_days_may
          + ' of them in May and ' + c.gust_days_sep_dec + ' in September–December '
-         + '— ' + nfix(share, 2) + '% of that window. Sep–Dec is the calmest '
+         + '- ' + nfix(share, 2) + '% of that window. Sep–Dec is the calmest '
          + 'stretch of the year. Weather is a short-horizon disruption signal, '
          + 'not a seasonal one.';
 }
@@ -3520,11 +3635,12 @@ async function loadCongestion() {
         // iron ore, so the inbound number alone understates the competition.
         const ktAll = (s.throughput_t_per_day/1000).toFixed(0);
         const ktLane = (s.lane_t_per_day/1000).toFixed(0);
+        const loc = s.state ? `${s.state}, ${s.country}` : (s.country || s.region || '');
         return `<div class="pc">
-          <div class="nm">${s.label}</div>
+          <div class="nm">${s.label}${loc ? ` <span style="font-weight:400;font-size:11px;color:var(--ink-4)">(${loc})</span>` : ''}</div>
           <div class="big" style="color:${BAND_INK[s.band] || 'var(--ink)'}">${s.calls_per_day.toFixed(2)}</div>
           <div class="sub">calls/day vs ${nfix(s.baseline_calls_per_day, 2)} normal</div>
-          <div class="sub" title="Total across the berth, both directions. Only ${ktLane} kt/day is ${s.flow} — the rest is cargo moving the other way, competing for the same quays.">${ktAll} kt/day total · ${ktLane} ${s.flow}</div>
+          <div class="sub" title="Total across the berth, both directions. Only ${ktLane} kt/day is ${s.flow} - the rest is cargo moving the other way, competing for the same quays.">${ktAll} kt/day total · ${ktLane} ${s.flow}</div>
           <div style="margin-top:7px"><span class="tag ${BAND_TAG[s.band] || 't-mute'}">${s.band}${
             s.reliable ? ` · ${ordinal(s.percentile)}` : ''}</span></div></div>`; };
 
@@ -3535,8 +3651,10 @@ async function loadCongestion() {
 
     const sel = document.getElementById('congPort');
     if (!sel.options.length) {
-        const grp = (t, rows) => `<optgroup label="${t}">` + rows.map(s =>
-            `<option value="${s.port}">${s.label}</option>`).join('') + '</optgroup>';
+        const grp = (t, rows) => `<optgroup label="${t}">` + rows.map(s => {
+            const loc = s.state ? `${s.state}, ${s.country}` : (s.country || s.region || '');
+            return `<option value="${s.port}">${s.label}${loc ? ` (${loc})` : ''}</option>`;
+        }).join('') + '</optgroup>';
         sel.innerHTML = grp('Discharge', disch) + grp('Load', loads);
         sel.addEventListener('change', () => drawCongestion(sel.value));
     }
@@ -3549,7 +3667,7 @@ async function loadCongestion() {
             const cells = MONTHS.map((_, i) => {
                 const v = prof[String(i+1)] ?? prof[i+1];
                 if (v === undefined || v === null) return '<td class="n">—</td>';
-                // One hue each way, light→dark by distance from 100 — a
+                // One hue each way, light→dark by distance from 100 - a
                 // sequential ramp on a magnitude, not a rainbow.
                 const k = Math.min(1, Math.abs(v-100)/32);
                 const bg = v >= 100 ? `rgba(194,65,12,${(k*.34).toFixed(3)})`
@@ -3564,7 +3682,7 @@ async function loadCongestion() {
     document.getElementById('congCaveat').innerHTML =
         `<b>What this measures:</b> ${d.caveat}`
         + (unrel.length ? '<br><b>Not scored:</b> ' + unrel.map(s =>
-            `${s.port} — ${s.reliability_note}`).join('; ') : '')
+            `${s.port} - ${s.reliability_note}`).join('; ') : '')
         + '<br><b>Seasonality:</b> every Indian port dips September to December. '
         + 'Tested against Open-Meteo wind for the same ports and dates, two things '
         + 'are true. ' + cycloneProse(d.cyclone_effect);
@@ -3763,7 +3881,7 @@ async function solveFleet() {
             h += '<tr><td>' + rkEsc(a.label) + '</td><td class="n">'
                + fmtMoney(a.cost_per_t) + '</td><td class="n"'
                + (pen > 0 ? ' style="color:var(--crit-t)"' : '') + '>'
-               + (pen > 0 ? '+' + pen.toFixed(1) + '%' : '&mdash;')
+               + (pen > 0 ? '+' + pen.toFixed(1) + '%' : ' - ')
                + '</td><td class="n">' + a.voyages + '</td><td>'
                + rkEsc((a.ports_used || []).join(', ')) + '</td></tr>';
         });
@@ -3809,7 +3927,7 @@ async function loadBallast() {
         // of the same name would swallow every later call to it.
         const empty = Math.round(r.ballast_share * 100);
         const cls = empty >= 50 ? 't-bad' : empty > 0 ? 't-warn' : 't-good';
-        const span = (st.min === null || st.min === undefined) ? '&mdash;'
+        const span = (st.min === null || st.min === undefined) ? ' - '
             : st.min.toFixed(1) + ' &ndash; ' + st.max.toFixed(1)
               + (st.crosses_parity
                  ? ' <span class="tag t-mute">unsettled</span>'
@@ -3875,7 +3993,7 @@ async function loadRisk() {
             + '<div class="rh"><span class="tag t-warn">UNAVAILABLE</span>'
             + '<span class="rt">Risk assessment could not run</span></div>'
             + '<p class="rd">' + rkEsc(e.message)
-            + ' &mdash; reopening this view will try again.</p></div></div>';
+            + ' - reopening this view will try again.</p></div></div>';
         document.getElementById('riskClearHead').hidden = true;
         return;
     } finally {
@@ -3915,7 +4033,7 @@ async function loadRisk() {
         ? Math.max.apply(null, stale.map(w => w.stale_hours || 0)) : 0;
     const staleNote = !stale.length ? '' :
         ' <b style="color:' + (SEV_INK.warning || 'inherit') + '">'
-        + stale.length + ' of these are not live</b> &mdash; the weather service '
+        + stale.length + ' of these are not live</b> - the weather service '
         + 'could not be reached, so they come from the last forecast that arrived, '
         + (staleAge < 1.5 ? 'under an hour ago'
             : staleAge < 36 ? Math.round(staleAge) + ' hours ago'
@@ -3926,7 +4044,7 @@ async function loadRisk() {
     document.getElementById('riskEvidence').innerHTML =
         '<b>' + d.measured + '</b> of these rest on a measured effect; <b>'
         + d.context_only + '</b> are context with no measured effect size. '
-        + 'The halt threshold is <b>' + d.gust_halt_kmh + ' km/h</b> &mdash; not a round '
+        + 'The halt threshold is <b>' + d.gust_halt_kmh + ' km/h</b> - not a round '
         + 'number chosen for looks, but the level at which arrivals were '
         + 'observed to stop.' + staleNote;
 
@@ -4208,7 +4326,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       <h3 id="askTitle">Ask the model</h3>
       <p>Every answer is computed from this project&rsquo;s own artefacts when
         you ask, and names the module it came from. No language model, no
-        network &mdash; so it cannot invent a number, and it will tell you
+        network - so it cannot invent a number, and it will tell you
         when it does not know.</p>
     </div>
     <button class="ask-x" id="askClose" aria-label="Close">&times;</button>

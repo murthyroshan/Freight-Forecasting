@@ -452,6 +452,8 @@ def _known_word(w):
 
 
 def _reply(text, table=None, source=None, follow=None, action=None):
+    if isinstance(text, str):
+        text = text.replace(' - ', ' - ').replace('-', '-')
     return {'answer': text.strip(), 'table': table, 'source': source,
             'follow_up': follow or [], 'action': action}
 
@@ -480,7 +482,7 @@ def sk_forecast(e, a):
     if pick:
         v = pick.get('validation') or {}
         text = (
-            'For **%s** — %d trading day%s out — the model expects '
+            'For **%s** - %d trading day%s out - the model expects '
             '**%s**, with an %d%% interval of %s to %s.\n\n'
             'At that horizon it has called direction correctly **%s** of the '
             'time out of sample, against a %s base rate.'
@@ -492,7 +494,7 @@ def sk_forecast(e, a):
     else:
         text = (
             'From the close of **%s**, with the Capesize index at **%s**, the '
-            'model expects %s over the next trading day and %s by **%s** — '
+            'model expects %s over the next trading day and %s by **%s** - '
             '%d trading days out.\n\n'
             'The cheapest day it forecasts is **%s** (%s); the dearest is '
             '**%s** (%s).'
@@ -512,10 +514,10 @@ def sk_forecast(e, a):
                  'availability, not on this.' % (_num(spread, 2),
                                                  _num(typical, 0)))
     elif cheapest is soonest:
-        text += ('\n\nThe verdict is **fix early** — the soonest day is the '
+        text += ('\n\nThe verdict is **fix early** - the soonest day is the '
                  'cheapest it forecasts, so waiting is expected to cost.')
     else:
-        text += ('\n\nThe verdict is **wait** — the gap to %s clears the '
+        text += ('\n\nThe verdict is **wait** - the gap to %s clears the '
                  'uncertainty.' % cheapest['target_date'])
 
     text += ('\n\nSignal strength is %s: the strongest call sits at the %d%% '
@@ -526,7 +528,7 @@ def sk_forecast(e, a):
     if cy and (cy['skill_pct'] < 0 or
                cy['direction_pct'] <= cy['base_rate_pct']):
         text += (' And **%s is a year the model is not beating** (%s against '
-                 'a %s base rate) — treat this as one input, not the decision.'
+                 'a %s base rate) - treat this as one input, not the decision.'
                  % (cy['period'], _num(cy['direction_pct']),
                     _num(cy['base_rate_pct'])))
 
@@ -587,7 +589,7 @@ def sk_accuracy(e, a):
     lic = a['licensed']
     text = (
         'Out of sample, the model calls direction correctly **%s** of the '
-        'time over %s scored weeks — but those weeks overlap, so the honest '
+        'time over %s scored weeks - but those weeks overlap, so the honest '
         'count is about **%d independent windows**. Against a %s base rate '
         'that is significant at p = %.1e.\n\n'
         'RMSE skill against assuming no change is **%s**, and it beats that '
@@ -601,7 +603,7 @@ def sk_accuracy(e, a):
             '\n\nThat figure is the **extended series** model. The replay also '
             'uses a second model over the licensed Baltic years to '
             '24/07/2019, which scores **%s** on its own %s weeks. The two are '
-            'never averaged — a combined number would describe neither.'
+            'never averaged - a combined number would describe neither.'
             % (_num(lic['models']['ridge']['direction_pct']),
                format(lic['n_scored'], ',')))
     text += ('\n\nJudge it on direction rather than skill: skill is a '
@@ -636,7 +638,7 @@ def sk_year(e, a):
                format(r['n'], ','),
                'That beats the best constant call for the year.' if beat else
                '**It did not beat simply guessing the majority direction** '
-               'that year — a bad year, reported rather than hidden.'))
+               'that year - a bad year, reported rather than hidden.'))
         if r.get('strong_direction_pct') is not None:
             text += ('\n\nOn the half of weeks it was most confident about, it '
                      'scored %s.' % _num(r['strong_direction_pct']))
@@ -712,7 +714,7 @@ def sk_value(e, a):
     if im:
         text += (
             '\n\nOn **%s tonnes a year** at $%.2f/t, converted at USD/INR %.2f '
-            '(read from the panel on %s), that is **$%.3f a tonne** — about '
+            '(read from the panel on %s), that is **$%.3f a tonne** - about '
             '**Rs %.2f crore a year**. The tonnage and the rate are yours; the '
             'percentage and the exchange rate are measured here.'
             % (format(int(tonnes), ','), rate, fx, fx_date,
@@ -746,7 +748,7 @@ def sk_seasonal(e, a):
                 'In **%s**, the Capesize index has moved **%s** on average '
                 'over the following five trading days, rising in %s of weeks, '
                 'across %s independent windows since 2012.\n\nVerdict: **%s** '
-                '— %s.\n\nThis is descriptive, not a forecast: it is what past '
+                '- %s.\n\nThis is descriptive, not a forecast: it is what past '
                 '%ss did, not what this one will do.'
                 % (r['name'], _pct(r['mean_move_pct'], 2),
                    _num(r['up_share_pct']), r['n_effective'], r['verdict'],
@@ -759,7 +761,7 @@ def sk_seasonal(e, a):
     near = [r for r in rows if r['verdict'] == 'large, not proven']
     text = (
         'Measured on the realised five-day move by the month the decision '
-        'falls in, 2012 to 2026 — **descriptive, not a forecast**.\n\n'
+        'falls in, 2012 to 2026 - **descriptive, not a forecast**.\n\n'
         'Overlapping windows mean %s rows are far fewer real observations, so '
         'every test uses the effective count, and the p-values are adjusted '
         'for testing twelve months. On that basis **%d of 12 clear the bar**%s.'
@@ -767,7 +769,7 @@ def sk_seasonal(e, a):
            ' (%s)' % ', '.join('%s %s' % (r['name'], _pct(r['mean_move_pct'], 1))
                                for r in clear) if clear else ''))
     if near:
-        text += (' %s move as hard and miss the correction — reported, not '
+        text += (' %s move as hard and miss the correction - reported, not '
                  'acted on.' % ' and '.join('%s (%s, p=%.3f)'
                                             % (r['name'],
                                                _pct(r['mean_move_pct'], 1),
@@ -809,14 +811,14 @@ def sk_vessel(e, a):
     best = rows[0]
     text = (
         'For a **%s tonne** parcel the best physical fit is a **%s into %s** '
-        '— %s tonnes a voyage, %d voyage%s, using **%s** of the capacity '
+        '- %s tonnes a voyage, %d voyage%s, using **%s** of the capacity '
         'you charter.\n\nWhat binds it: %s.'
         % (format(int(parcel), ','), best['vessel'], best['port'],
            format(int(best['max_cargo_t']), ','), best['_voyages'],
            '' if best['_voyages'] == 1 else 's', _num(best['_fill'] * 100),
            best.get('binding', 'not reported')))
-    text += ('\n\nThese capacities are computed physics — draft, tonnes '
-             'per centimetre and dock water allowance — not quoted '
+    text += ('\n\nThese capacities are computed physics - draft, tonnes '
+             'per centimetre and dock water allowance - not quoted '
              'figures. Costs are yours; this project has no verified freight '
              'rate for the lane.')
     table = {'head': ['Vessel', 'Port', 'Verdict', 'Voyages', 'Cargo/voyage',
@@ -838,7 +840,7 @@ def sk_berth(e, a):
         return _reply('Could not check that pairing: %s' % exc)
     text = (
         'A **%s** at **%s**: **%s**.\n\nIt can lift **%s tonnes** of a '
-        'possible %s — %s of deadweight — leaving %s tonnes ashore each '
+        'possible %s - %s of deadweight - leaving %s tonnes ashore each '
         'voyage.\n\nWhat binds it: %s. TPC is %s tonnes per centimetre of '
         'immersion.'
         % (vessel, port, r['verdict'].upper(),
@@ -867,7 +869,7 @@ def sk_port_activity(e, a):
     if not s:
         return _reply('No arrivals data for %s.' % port)
     text = (
-        '**%s** is running **%s dry bulk calls a day** against a %s normal — '
+        '**%s** is running **%s dry bulk calls a day** against a %s normal - '
         'the %s percentile of its own history, which reads as **%s**.\n\n'
         'Throughput is %s tonnes a day across the berth in both directions.'
         % (s.get('label') or port, _dec(s['calls_per_day']),
@@ -879,7 +881,7 @@ def sk_port_activity(e, a):
     if not s.get('reliable', True) and s.get('reliability_note'):
         text += '\n\n' + s['reliability_note']
     text += ('\n\nThis is arrivals from IMF PortWatch, derived from AIS. It is '
-             'not queue length or waiting time — a busy berth is context for '
+             'not queue length or waiting time - a busy berth is context for '
              'competition, not a measured delay.')
     return _reply(text, None, 'src/congestion.py -> IMF PortWatch',
                   ['What is the weather risk at %s?' % port,
@@ -905,7 +907,7 @@ def sk_weather(e, a):
             ['How busy is %s?' % (port or 'Paradip')], {'view': 'risk'})
     text = '**%d raised%s.**\n\n' % (len(raised), ' for %s' % port if port else '')
     for r in raised[:4]:
-        text += ('- **%s** — %s (%s)\n  %s\n'
+        text += ('- **%s** - %s (%s)\n  %s\n'
                  % (r['title'], r['severity'],
                     'measured' if r['measured'] else 'context only',
                     r['detail']))
@@ -928,14 +930,14 @@ def sk_ballast(e, a):
         v = shares.get(port)
         if v is None:
             return _reply(
-                'The empty leg at **%s** is **unpriced** — PortWatch has no '
+                'The empty leg at **%s** is **unpriced** - PortWatch has no '
                 'arrivals coverage for those berths, so the share of ships '
                 'leaving empty cannot be measured there. Any cost that routes '
                 'through it is optimistic, and the optimiser says so rather '
                 'than assuming zero.' % port, None, 'src/ballast.py',
                 ['Which vessel for 150,000 tonnes?'], {'view': 'fleet'})
         return _reply(
-            'At **%s**, about **%s of ships leave empty** — measured from '
+            'At **%s**, about **%s of ships leave empty** - measured from '
             'PortWatch tonnage in and out over the trailing window.\n\nWhat '
             'that empty leg *costs* is not measured here; it is entered as a '
             'fraction of a laden voyage on the Vessel and port view.'
@@ -947,7 +949,7 @@ def sk_ballast(e, a):
                      [[k, 'unpriced'] for k, v in shares.items() if v is None]}
     return _reply(
         'Share of ships leaving each berth empty, from PortWatch tonnage:\n\n'
-        'Aggregate matching is an **upper bound** on backhaul — a given ship '
+        'Aggregate matching is an **upper bound** on backhaul - a given ship '
         'may not be able to take a given cargo, and the feed cannot see that. '
         'Berths with no coverage are reported unpriced rather than assumed '
         'balanced.', table, 'src/ballast.py',
@@ -960,7 +962,7 @@ def sk_method(e, a):
     text = (
         'The evaluation is an **expanding-window walk-forward** over %d folds. '
         'Each fold trains only on data before its test block, with a '
-        '**%d-day purge gap on both boundaries** — the target at row *i* is '
+        '**%d-day purge gap on both boundaries** - the target at row *i* is '
         'built from row *i+%d*, so without the gap the last targets of one '
         'block are computed from prices inside the next.\n\n'
         'Feature selection happens **inside** each fold, from that fold\'s '
@@ -969,7 +971,7 @@ def sk_method(e, a):
         'calibration block the model never fitted, scaled by a volatility '
         'estimate known at the time. Realised coverage is %s against an %d%% '
         'target.\n\n'
-        'Significance is computed on **independent windows**, not rows — '
+        'Significance is computed on **independent windows**, not rows - '
         'overlapping %d-day targets mean %s rows are only about %d real '
         'observations, and testing on the row count would inflate it roughly '
         'fivefold.'
@@ -1026,15 +1028,15 @@ def sk_data(e, a):
     m = a['metrics'] or {}
     return _reply(
         '**Where every number comes from.**\n\n'
-        '- **Baltic Capesize, Panamax and Supramax** — a licensed Mendeley '
+        '- **Baltic Capesize, Panamax and Supramax** - a licensed Mendeley '
         'copy to 2019-07-31 under CC BY 4.0, spliced to a public mirror after '
         'it. The splice is validated, not trusted: the fetcher refuses to '
         'write the extension unless it reproduces the licensed years at '
         'correlation 0.99 or better with a 99th-percentile gap under 5%%.\n'
-        '- **Port calls** — IMF PortWatch, derived from AIS.\n'
-        '- **Weather** — Open-Meteo, history and a ten-day forecast.\n'
-        '- **Brent, copper, the dollar, owner equities** — Yahoo Finance.\n'
-        '- **Berth limits** — published port authority drafts; capacities are '
+        '- **Port calls** - IMF PortWatch, derived from AIS.\n'
+        '- **Weather** - Open-Meteo, history and a ten-day forecast.\n'
+        '- **Brent, copper, the dollar, owner equities** - Yahoo Finance.\n'
+        '- **Berth limits** - published port authority drafts; capacities are '
         'computed from them by physics, not quoted.\n\n'
         'The panel is **%s rows** over %s features, %s to %s.'
         % (format(m.get('panel_rows', 0), ','), len(m.get('features', [])),
@@ -1050,7 +1052,7 @@ def sk_licence(e, a):
         'CC BY 4.0**, which permits use with attribution and runs to '
         '2019-07-31.\n\n'
         'Past that date the series continues from a **public mirror, fetched '
-        'at runtime and never redistributed** — this repository stores no '
+        'at runtime and never redistributed** - this repository stores no '
         'extended Baltic values in version control. Current Baltic '
         'assessments are a paid feed.\n\n'
         'For a live SAIL deployment the honest position is that it would need '
@@ -1070,9 +1072,9 @@ def sk_two_models(e, a):
     return _reply(
         'Two models cover the replay, and which one answered is shown on '
         'every call.\n\n'
-        '- **Licensed Baltic years** — fitted on the Mendeley copy alone. '
+        '- **Licensed Baltic years** - fitted on the Mendeley copy alone. '
         'Scores **%s** direction over %s weeks, %s to %s.\n'
-        '- **Extended series** — licensed copy spliced to a validated mirror. '
+        '- **Extended series** - licensed copy spliced to a validated mirror. '
         'Scores **%s** over %s weeks, and it is the only one that can forecast '
         'today.\n\n'
         'The rule is fixed in advance: licensed while its data reaches, '
@@ -1094,34 +1096,34 @@ def sk_two_models(e, a):
 
 def sk_help(e, a):
     return _reply(
-        'I answer from this project\'s own artefacts — every figure is '
+        'I answer from this project\'s own artefacts - every figure is '
         'computed when you ask, and I name the module it came from. I have no '
         'language model in me, so I cannot invent a number, and I work with '
         'the network off.\n\n'
         'Things I can answer:\n\n'
-        '- **The forecast** — the call for the days ahead, at any horizon out '
+        '- **The forecast** - the call for the days ahead, at any horizon out '
         'to a month\n'
-        '- **When to book** — the cheapest expected day and what waiting costs\n'
-        '- **Accuracy** — overall, by year, and by how confident the model was\n'
-        '- **What it is worth** — the procurement backtest, in percent and in '
+        '- **When to book** - the cheapest expected day and what waiting costs\n'
+        '- **Accuracy** - overall, by year, and by how confident the model was\n'
+        '- **What it is worth** - the procurement backtest, in percent and in '
         'rupees\n'
-        '- **Seasonality** — which months have actually moved\n'
-        '- **Ships and berths** — which vessel fits, what a berth allows, how '
+        '- **Seasonality** - which months have actually moved\n'
+        '- **Ships and berths** - which vessel fits, what a berth allows, how '
         'much cargo\n'
-        '- **Ports** — how busy a berth is, weather risk, empty legs\n'
-        '- **Method** — how it is validated, where the data is from, the '
+        '- **Ports** - how busy a berth is, weather risk, empty legs\n'
+        '- **Method** - how it is validated, where the data is from, the '
         'licensing position\n'
-        '- **Limits** — where the model fails, said plainly\n'
-        '- **Jargon** — what a Capesize, a laycan or TPC actually is, with '
+        '- **Limits** - where the model fails, said plainly\n'
+        '- **Jargon** - what a Capesize, a laycan or TPC actually is, with '
         'this project\'s own figures in the definition\n'
-        '- **Rankings and comparisons** — the busiest berth, the best and '
+        '- **Rankings and comparisons** - the busiest berth, the best and '
         'worst years, two ports or two ships side by side\n'
-        '- **Scenarios** — give me a tonnage and a freight rate and I will '
+        '- **Scenarios** - give me a tonnage and a freight rate and I will '
         'scale the measured saving to it, labelling whose number is whose\n'
-        '- **The working** — ask *how did you compute that* after any answer '
+        '- **The working** - ask *how did you compute that* after any answer '
         'and I will show the method and the guard behind it\n\n'
         'Ask in your own words, mistype them if you like, and carry on in '
-        'follow-ups — *and Haldia?* after a weather answer is a weather '
+        'follow-ups - *and Haldia?* after a weather answer is a weather '
         'question, and I will say out loud what I read it as. If I cannot '
         'answer from the artefacts I will say so rather than guess.',
         None, None,

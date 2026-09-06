@@ -21,7 +21,7 @@ lies strictly in the future, so any feature built from data up to and including
 
 Log rather than simple return: Capesize bottomed at **92 on 2019-04-02**, after
 the Vale Brumadinho dam collapse wiped out Brazilian iron ore exports. Those
-prints are real, so they stay — but a simple return off a denominator of 92
+prints are real, so they stay - but a simple return off a denominator of 92
 gives +311%, skew +3.1 and kurtosis +25.6, and RMSE would then be decided by
 about four days in 2019. Logs give skew +0.5 and kurtosis +3.2 over the
 identical rows.
@@ -30,7 +30,7 @@ identical rows.
 
 SAIL lifts 150–180k t coking coal parcels from Hay Point, Gladstone and the US
 east coast. That is Capesize work. It is also the only index whose returns track
-BDRY closely enough for the live-proxy question to be worth asking at all —
+BDRY closely enough for the live-proxy question to be worth asking at all -
 weekly r = +0.671, against +0.383 for Panamax and +0.288 for Supramax.
 
 A caution that generalises: **Supramax has the *highest* level correlation with
@@ -43,27 +43,27 @@ Expanding-window walk-forward, eight folds, with a **five-day purge gap** betwee
 train and test. Without the gap the last training rows overlap the first test
 row's target window and the model is scored on data it partly saw.
 
-Baselines first, because "accuracy" on a return series is meaningless — you can
+Baselines first, because "accuracy" on a return series is meaningless - you can
 score 97% on a series that never moves much. What matters is beating what a desk
 already has for free: assuming no change, and the single strongest feature
 fitted by OLS.
 
 | Model | RMSE | MAE | Skill vs no-change | Direction |
 | :--- | ---: | ---: | ---: | ---: |
-| assume no change | 0.2908 | 0.1858 | — | — |
+| assume no change | 0.2908 | 0.1858 | - | - |
 | momentum (1 feature, OLS) | 0.2777 | 0.1771 | +4.5% | 61.5% |
 | **ridge (17 features)** | **0.2745** | 0.1786 | **+5.6%** | **61.7%** |
 | LightGBM | 0.2810 | 0.1757 | +3.4% | 62.5% |
 
 Per fold, ridge beats the no-change baseline in **5 of 8**. The three losses are
 2021-H2, 2023-H2 and the most recent year, and all are shown in the dashboard
-rather than hidden. Its largest edge is fold 1 — the COVID collapse, where the
+rather than hidden. Its largest edge is fold 1 - the COVID collapse, where the
 no-change RMSE blows out to 0.555 and ridge cuts it to 0.494.
 
 ### The skill figure is fragile; the direction figure is not
 
-This matters more than the headline. Twelve rows out of 1,971 — all between
-January and May 2020, when the index fell from 207 to about 1 — carry most of
+This matters more than the headline. Twelve rows out of 1,971 - all between
+January and May 2020, when the index fell from 207 to about 1 - carry most of
 the measured RMSE skill:
 
 | Sample | Skill | Direction |
@@ -92,7 +92,7 @@ Sorted by how much the rate actually moved over the five days:
 Lift is direction accuracy minus the best constant guess on those same rows, so
 it cannot be won by always predicting "up".
 
-The same shape holds on the recent period alone, at a lower level — since 2022
+The same shape holds on the recent period alone, at a lower level - since 2022
 the largest quartile scores **62.8%** and the smallest **50.9%**. The model adds
 nothing in flat weeks and a great deal in moving ones. A chartering desk only
 acts when the move is large enough to matter, which is exactly where the edge
@@ -105,12 +105,12 @@ The table above has a flaw as a decision aid: it sorts on the realised move,
 which nobody knows at the time. It says the edge is concentrated, but not how to
 find it prospectively.
 
-The model's own conviction does that. Sorting instead by |prediction| — available
+The model's own conviction does that. Sorting instead by |prediction| - available
 the moment the model runs, needing no outcome:
 
 | Act only when… | Weeks | Independent windows | Direction | vs all weeks | p |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| always | 1,721 | 344 | 61.8% | — | — |
+| always | 1,721 | 344 | 61.8% | - | - |
 | strongest 75% | 1,320 | 264 | 65.4% | +3.6 pp | <0.0001 |
 | strongest 50% | 894 | 178 | **69.6%** | +7.8 pp | <0.0001 |
 | **strongest 25%** | 433 | 86 | **72.5%** | **+10.8 pp** | 0.0001 |
@@ -119,8 +119,8 @@ Three things make this an honest table rather than a flattering one.
 
 **The threshold is causal.** "The strongest half" is a quantile of predictions
 from *strictly before* the week being judged, so appending later data can never
-change a decision already taken. A quantile over the whole test period — the
-obvious implementation — would need next year's predictions to rank this one, and
+change a decision already taken. A quantile over the whole test period - the
+obvious implementation - would need next year's predictions to rank this one, and
 the whole table would be a look-ahead artefact. `tier_mask()` is factored out for
 exactly the reason `folds()` is: so a test can assert the property directly.
 `tests/test_walkforward.py` checks that scoring a truncated history returns
@@ -128,7 +128,7 @@ identical decisions for the rows the two runs share, and that multiplying the
 last third of the predictions by fifty does not un-call a single earlier week.
 
 **The baseline is the same rows.** The first 250 scored weeks cannot be ranked
-— there is no history yet to place them against — so they are excluded from every
+- there is no history yet to place them against - so they are excluded from every
 row of the table, the *always* row included. That is why it reads 61.8% rather
 than the 61.7% headline. Comparing a tier against all 1,971 rows would credit the
 tiering with the burn-in it merely dropped.
@@ -146,7 +146,7 @@ run through the same tiering, random predictions on random outcomes score
 What this changes in practice is the product. The honest claim is not "the model
 is right 62% of the time"; it is "the model is right 62% of the time if you make
 it answer every week, and 70% on the half of weeks it has something to say
-about — and it tells you which half in advance." Charterers do not fix cargoes
+about - and it tells you which half in advance." Charterers do not fix cargoes
 weekly. They fix a few a quarter, and can wait for the weeks the model is
 confident about.
 
@@ -154,20 +154,20 @@ confident about.
 
 Daily freight autocorrelation is ~0.99 and the five-day targets overlap, so
 3,284 rows is really about **656 effective windows**, and the 1,971 rows the
-model is actually scored on are about **394** — which is the figure the
+model is actually scored on are about **394** - which is the figure the
 significance test uses, and the one `models/metrics.json` records as
 `n_effective`. A normally sized GBM
 memorises that instantly. The feature count is capped at 17 for the same reason.
 
 The significance test uses that smaller number too: 61.7% direction on ~394
-independent windows gives p = 1.0e-05 — tested against the realised
+independent windows gives p = 1.0e-05 - tested against the realised
 up-rate of 51.0% rather than a coin, and Bonferroni-adjusted over the three
 candidate models, since the model tested is the one chosen by this same score.
 Computed on the 1,971 overlapping rows it would be inflated roughly fivefold.
 
 ### Intervals
 
-Split-conformal residual quantiles, in the **locally weighted** variant — each
+Split-conformal residual quantiles, in the **locally weighted** variant - each
 residual scaled by a volatility estimate known at *t*, then rescaled on the test
 side. Plain split conformal gives **81.0%** coverage for a nominal 80%, because
 freight volatility clusters and one global quantile is too narrow in stressed
@@ -175,7 +175,7 @@ regimes. The weighted form reaches **81.7%**, at the cost of a mean interval
 20% wider (0.568 to 0.682). Both figures are produced by
 `walk_forward(..., conformal='plain'|'local')` on the same folds with the same
 finite-sample-corrected quantile, and both are written to `models/metrics.json`
-— neither is a number typed into this file.
+- neither is a number typed into this file.
 
 ---
 
@@ -190,7 +190,7 @@ The saving is reported as a **fraction of the freight rate**, never in currency.
 The Baltic series here is an index in points; this repository carries no sourced
 conversion to dollars per day, and asserting one would place a fabricated number
 at the centre of the result. Fix today and pay R, or hold and pay `R·exp(y)`, so
-the saving is `R − R·exp(y)` and as a fraction it is `1 − exp(y)` — R cancels,
+the saving is `R − R·exp(y)` and as a fraction it is `1 − exp(y)` - R cancels,
 which is precisely what makes the figure portable to a rate the reader supplies.
 
 | Policy | Saved | Win rate | Fixtures held |
@@ -224,7 +224,7 @@ momentum is beaten; on this particular decision at this horizon, it does not.
 Saying so is cheaper than having it found.
 
 The remaining check is that slicing itself cannot manufacture a saving. Random
-calls on these same returns earn about half the always-wait control — near
+calls on these same returns earn about half the always-wait control - near
 −1.4%, not zero, because a coin-flip rule still waits through half a rising
 market. Every random trial loses money; the model is the only policy tested that
 turns the sign positive, and `tests/test_procurement.py` asserts it.
@@ -241,14 +241,14 @@ not a price anyone can fix at.
 
 Publishing one aggregate over eight years invites exactly one question, and
 answering it from that same aggregate is not an answer. `regimes()` splits the
-record by calendar year — the one boundary that cannot be accused of having been
-chosen — and reports the weak years beside the strong ones.
+record by calendar year - the one boundary that cannot be accused of having been
+chosen - and reports the weak years beside the strong ones.
 
 RMSE skill is negative in **two of nine years**, 2022 and 2026. In those same two
 years direction also fails to beat the year's own base rate: 51.0% against 54.4%
 in 2022, and 56.0% against 62.0% in 2026, where always saying "up" would have
 scored better. A bad year here is bad on every measure at once. The confidence
-tiering does not rescue them either — 54.9% and 55.7% on the strongest half — so
+tiering does not rescue them either - 54.9% and 55.7% on the strongest half - so
 in a bad year the model is *confidently* wrong. The aggregate is carried by
 2019–2021.
 
@@ -264,7 +264,7 @@ recent record confirms it rather than contradicting it.
 Two consequences follow. The first is that the honest headline is the direction
 figure with its base rate beside it, never the skill figure alone. The second is
 that a deployment would need to monitor realised volatility, because the
-conditions under which this model adds least are identifiable in advance — they
+conditions under which this model adds least are identifiable in advance - they
 are the quiet ones.
 
 ### Keeping the demo honest when the network is not there
@@ -272,7 +272,7 @@ are the quiet ones.
 The only live network call at serving time is the ten-day weather outlook in
 `src/risk.py`; everything else on the dashboard is read from an artefact built
 offline. Those forecasts were originally fetched one port after another, so an
-unreachable network cost `TIMEOUT` once per site — 60 seconds before the panel
+unreachable network cost `TIMEOUT` once per site - 60 seconds before the panel
 rendered anything.
 
 No test caught it, and the reason is worth recording: every row degraded
@@ -288,8 +288,8 @@ cannot overtake a slow one and shuffle the panel.
 That fixed the server, which turned out to be the easier half.
 
 The page itself was still loading `chart.js` from a CDN and its three
-typefaces from Google Fonts. Cutting the *browser* off from the network — the
-condition that actually obtains at a venue — does not degrade that page, it
+typefaces from Google Fonts. Cutting the *browser* off from the network - the
+condition that actually obtains at a venue - does not degrade that page, it
 breaks it: the fonts merely fall back, but the chart library never arrives, the
 inline script then throws on a missing global, and the date field, the
 recommendation panel and the live badge all disappear with it. The opening view
@@ -297,14 +297,14 @@ of the demo renders as an empty box.
 
 No test caught this either, and the reason is structural: every request the suite
 makes goes to `127.0.0.1`, which is reachable with the wifi off. Both halves of
-the offline problem were invisible for the same underlying reason — the tests
+the offline problem were invisible for the same underlying reason - the tests
 asked whether the answer was right, not whether it could be obtained. Both are
 now asserted directly, the first on the latency budget and the second on the
 markup, which is checked for any `src` or `href` pointing at another host.
 
 Both dependencies are vendored under `static/vendor/`, so the page is
 byte-identical with the network down. The font bundle keeps the Latin subsets
-only — Google serves Cyrillic, Greek and Vietnamese alongside them, which are
+only - Google serves Cyrillic, Greek and Vietnamese alongside them, which are
 dead weight for an English page. Building it exposed a trap worth recording:
 these are *variable* fonts, so every weight of a family shares one file, and a
 first attempt that named the downloaded files per weight left twelve of eighteen
@@ -321,7 +321,7 @@ A stale forecast shown as a live one would be the exact failure this module
 exists to prevent, so the fallback is fenced three ways. It **expires**: a cache
 older than 72 hours is refused outright and the honest outage row returns, because
 beyond that the remaining window is too short to be worth the ambiguity. Days it
-covered that have **already passed are dropped** — a ten-day outlook taken three
+covered that have **already passed are dropped** - a ten-day outlook taken three
 days ago is a seven-day outlook now, and reporting "over the next 10 days" off it
 would describe three days already in the past. And every row it produces is
 **labelled**: `live: false`, the age in the title as well as the basis line, since
@@ -330,7 +330,7 @@ collapsed lists show titles alone.
 The presentation layer needed the same care. A cached forecast usually yields
 *clear* rows, and the panel collapses clear rows out of sight, so an offline
 panel would have read as a clean all-clear with nothing to say that five of its
-checks were not live — the reassuring-from-no-data failure reintroduced one layer
+checks were not live - the reassuring-from-no-data failure reintroduced one layer
 up. The count of not-live checks is therefore printed beside the severity counts,
 where it cannot be collapsed.
 
@@ -343,17 +343,17 @@ reports that the check could not run.
 The failure text is translated too. `HTTPSConnectionPool(host=..., port=443):
 Max retries exceeded` reads, in front of an audience, as though the software is
 broken rather than the wifi; the row now says the weather service could not be
-reached and there is no working network connection. Nothing is swallowed — an
+reached and there is no working network connection. Nothing is swallowed - an
 unrecognised error still arrives verbatim, because a message nobody anticipated
 is exactly the one that must not be smoothed into a reassuring sentence.
 
-## 2 · Falsification test one — the traded proxy
+## 2 · Falsification test one - the traded proxy
 
 Our *licensed* Baltic history ends 2019-07-31, and the Baltic Exchange charges
 for current assessments. So: could the free, exchange-traded BDRY stand in?
 
 (The series is now extended past 2019 from a public mirror of the same Baltic
-indices — see §6 — but that mirror carries no licence, so the question below is
+indices - see §6 - but that mirror carries no licence, so the question below is
 still the right one to have asked.)
 
 | Series | What it is | Lag-1 autocorrelation | Our skill |
@@ -363,22 +363,22 @@ still the right one to have asked.)
 
 **It cannot, and that is the correct result.** The Baltic index is a survey whose
 panellists anchor on the previous print, so it is autocorrelated and genuinely
-forecastable. BDRY is arbitraged — if its returns were predictable at +0.62,
+forecastable. BDRY is arbitraged - if its returns were predictable at +0.62,
 someone would have traded that away.
 
 Scoring well on *both* would have meant we were fooling ourselves. This is the
 experiment that would have caught us, and it is reported because we ran it.
 
 **Consequence.** Production runs on SAIL's own Baltic licence (≈£2,000/yr plus
-£595 setup — a rounding error at SAIL's scale). The licence restricts *our*
+£595 setup - a rounding error at SAIL's scale). The licence restricts *our*
 redistribution, not SAIL's internal use.
 
 ---
 
-## 3 · Falsification test two — the seasonal dip
+## 3 · Falsification test two - the seasonal dip
 
 Arrivals at all five Indian discharge ports fall between September and December
-— tested port by port, not on the average, so it is not an artefact of how the
+- tested port by port, not on the average, so it is not an artefact of how the
 mean is taken.
 
 Bay of Bengal cyclone season overlaps that window, so we checked it against
@@ -395,7 +395,7 @@ On the day of and the day before a gust above 90 km/h:
 | Dhamra | 0.00 /day | 1.00 | **−100%** | <0.0001 |
 | Haldia | 1.20 /day | 1.91 | −37% | 0.046 |
 
-The data captures real storms at the right dates — Cyclone Fani (3 May 2019)
+The data captures real storms at the right dates - Cyclone Fani (3 May 2019)
 registers **144 km/h**, the highest reading in the series; Amphan 125, Yaas 101,
 Dana 89. An event study shows arrivals collapsing at lag −1 and 0, then
 rebounding *above* baseline the next day: ports clear vessels before the storm
@@ -403,7 +403,7 @@ and catch up after.
 
 ### But they cannot explain the season
 
-Paradip has had **7 such days in 8 years — 5 in May, 2 in November.** September
+Paradip has had **7 such days in 8 years - 5 in May, 2 in November.** September
 to December contains 2 of them, affecting roughly 4 days out of 854 in that
 window: **0.4%**, against an observed shortfall of about **15%** of arrivals.
 Wrong by a factor of thirty.
@@ -431,7 +431,7 @@ carry into this port"*.
 Over the operating range a hull immerses almost linearly with weight. The
 constant is **TPC**, tonnes per centimetre, estimated from waterplane area
 (`Lwl × B × Cw`, with Cw = 0.85 for a full-form bulk carrier). This is an
-estimate, not a hydrostatic table — but the values it produces sit inside the
+estimate, not a hydrostatic table - but the values it produces sit inside the
 published ranges for each class.
 
 | Class | DWT | Laden draft | TPC | Cargo capacity |
@@ -453,13 +453,13 @@ limit, and no amount of part-loading makes a ship narrower.
 
 **Validation.** The model is given Paradip's *draft* and nothing about
 deadweight, yet its Capesize answer implies **155,820 DWT** against an
-independently documented berth limit of ~155,000 — within 0.6%.
+independently documented berth limit of ~155,000 - within 0.6%.
 
 ### Ranking on the right quantity
 
 Options are ranked by how much of the **chartered** capacity a parcel fills, not
 by how full each ship could be. The latter scores a Capesize and a Newcastlemax
-equally — both load to 100% of their own capacity — while a 160,000 t parcel
+equally - both load to 100% of their own capacity - while a 160,000 t parcel
 leaves 44,200 t of the Newcastlemax empty. Freight is paid on the ship, so the
 larger vessel is the worse fixture even though it fits.
 
@@ -473,7 +473,7 @@ Allowance.
 
 Where a berth's LOA, beam or channel limits are not verified, the tonnage is
 labelled explicitly. A Capesize at Haldia computes to 68,435 t on draft alone,
-but a 289 m ship cannot transit the Hooghly — so it is reported as
+but a 289 m ship cannot transit the Hooghly - so it is reported as
 `uneconomic` at 39% utilisation with a caveat, never as a berthing plan. Only
 Paradip and Sagar-Sandheads have verified geometry.
 
@@ -485,7 +485,7 @@ deep-draft port would invert the answer for the entire Haldia trade.
 
 ## 5 · Port activity
 
-PortWatch publishes AIS-derived **arrivals and tonnage** — not waiting time,
+PortWatch publishes AIS-derived **arrivals and tonnage** - not waiting time,
 queue length or berth occupancy. Nothing here is called congestion. A high
 reading means the berth is under load, not that a ship will wait N days.
 
@@ -495,7 +495,7 @@ other permanently swamped.
 
 **Bands come from the percentile, not the ratio.** Measured here, 1.32× the
 median sits at the 80th percentile at Paradip, 82nd at Haldia, 85th at Dhamra
-and 86th at Visakhapatnam — a six-point spread, so one ratio threshold would
+and 86th at Visakhapatnam - a six-point spread, so one ratio threshold would
 call the same load "busy" at one berth and "very busy" at another.
 
 **Low-volume ports are refused a reading.** Gopalpur's baseline is 0.29 calls a
@@ -503,7 +503,7 @@ day, where one ship arriving or not swings a ratio by hundreds of percent. It is
 flagged `unreliable` with the reason stated.
 
 **Two tonnage figures per port.** Every Indian discharge port also loads: Paradip
-averages **59 kt/day inbound against 87 kt/day outbound** over the full record —
+averages **59 kt/day inbound against 87 kt/day outbound** over the full record -
 60% leaves as
 iron ore, competing for the same berths. Against Paradip's call counts, imports
 alone correlate r = +0.620 and exports alone +0.751, but together **+0.898**. At
@@ -515,8 +515,8 @@ the load end the distinction is starker still: Hay Point and Newcastle record
 
 ## 6 · Extending the Baltic series past 2019
 
-Our licensed Mendeley copy ends **2019-07-31**. Everything else in the system —
-port calls, weather, market data — runs to the present, so the *label* was the
+Our licensed Mendeley copy ends **2019-07-31**. Everything else in the system -
+port calls, weather, market data - runs to the present, so the *label* was the
 only thing stopping the model from forecasting today.
 
 **The source.** East Money, a public financial portal, mirrors the Baltic
@@ -529,14 +529,14 @@ indices through a keyless JSON API. It was validated before use, not after:
 | Supramax | 1,731 | 42.9% | 123 points |
 
 Supramax agrees on far fewer days, but the level correlation is **0.9991** and
-the mean gap is 0.5 points on a series around 900 — early-year revision noise,
+the mean gap is 0.5 points on a series around 900 - early-year revision noise,
 not a different index. It converges to 99% by 2019.
 
 `fetch_data.py` therefore validates on **value, not on exact matching**: each
 series must correlate at least 0.99 with the licensed copy and disagree by no
 more than 5% at the 99th percentile, *and* reproduce the licensed value exactly
 on the join day. Gating on the byte-identical rate instead would have left
-Supramax three points above its floor — and since one failing series aborts the
+Supramax three points above its floor - and since one failing series aborts the
 whole fetch, a bad year of revisions would have silently killed the Capesize
 extension, which is the series the model actually needs.
 
@@ -545,26 +545,26 @@ move within a week of the join is 5.2% against a 3.2% typical daily move, so no
 seam was introduced. `tests/test_leakage.py` §7 asserts all of this.
 
 **The index goes negative.** The Capesize basis is a timecharter equivalent, and
-a TCE can fall below zero when the market collapses — it did for 44 sessions
+a TCE can fall below zero when the market collapses - it did for 44 sessions
 between 2020-01-31 and 2020-05-14, bottoming at −372. A log return is undefined
 there, so those days are dropped. It costs 12 rows of 3,296, and every
 alternative target scored worse on the extended series:
 
 | Target | Skill |
 | :--- | ---: |
-| **log(P₊₅/P) — kept** | **+5.5%** |
+| **log(P₊₅/P) - kept** | **+5.5%** |
 | (P₊₅−P)/P simple | −2.3% |
 | log with a +1000 offset | −2.5% |
 | (P₊₅−P)/vol₂₁ standardised | −21.9% |
 
 Dropping rows from the middle leaves gaps in the panel, and the walk-forward
 purges by position. A gap therefore makes the purge span *more* source days,
-never fewer — measured at 5 to 75, so it is conservative at the gaps rather
+never fewer - measured at 5 to 75, so it is conservative at the gaps rather
 than narrower. Asserted in `tests/test_leakage.py` §9.
 
 **Licence.** The Baltic Exchange indices are proprietary and East Money states
 no licence for its mirror. This repository fetches at runtime and redistributes
-nothing — `data/` is gitignored and no index value is committed. A production
+nothing - `data/` is gitignored and no index value is committed. A production
 deployment would need a Baltic Exchange licence; the licence restricts
 redistribution, not a licensee's own internal use.
 
@@ -573,7 +573,7 @@ redistribution, not a licensee's own internal use.
 ## 7 · Why two modules and not one
 
 PortWatch begins 2019-01-01. The Baltic series ends 2019-07-31. **211 days of
-overlap** — nowhere near enough to learn congestion effects on rates.
+overlap** - nowhere near enough to learn congestion effects on rates.
 
 So the rate model is statistical and the port model is deterministic. That split
 is forced by the data, not chosen for convenience.

@@ -281,7 +281,7 @@ def _main():
     # Top-level declarations begin at column 0 inside the script block;
     # anything indented at all is inside a function. Keying on "indented
     # or not" rather than a fixed depth keeps this working however the
-    # page is formatted — an earlier version assumed exactly 8 spaces and
+    # page is formatted - an earlier version assumed exactly 8 spaces and
     # reported every function-local as a global the moment the markup was
     # re-indented.
     top = set(re.findall(r'\n(?:const|let)\s+(\w+)\s*=', html)) | \
