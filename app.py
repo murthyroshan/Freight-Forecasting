@@ -48,6 +48,12 @@ from src import (paths, ports, congestion, risk, optimise,  # noqa: E402
                  booking, seasonal,
                  assistant)
 
+# Lazy import: portfolio.py may not exist yet on a fresh clone.
+try:
+    from src import portfolio  # noqa: E402
+except ImportError:
+    portfolio = None
+
 app = Flask(__name__)
 
 METRICS_PATH = os.path.join(paths.MODELS, 'metrics.json')
@@ -398,6 +404,154 @@ def api_forecast():
     return jsonify(_json_safe(FORECAST))
 
 
+@app.route('/api/decision', methods=['POST'])
+def api_decision():
+    """The one-tap charter decision: WAIT, CHARTER NOW, or NO CLEAR CALL.
+
+    This is the executive hook. It takes a parcel size and a freight rate,
+    reads the forward curve that src/forecast.py already computed, and
+    returns one decisive answer with the rupee figure attached.
+
+    The rupee number is the exposure on this parcel - what waiting or not
+    waiting is expected to cost - converted at the USD/INR rate the panel
+    carries. It is NOT a guarantee; the conformal interval is sent
+    alongside it so the client can show both.
+    """
+    if FORECAST is None:
+        return jsonify({'error': MISSING_FORECAST % FORECAST_PATH}), 503
+
+    data, err = _body()
+    if err:
+        return err
+    try:
+        parcel = _number(data.get('parcel_t', 160000), 'parcel_t',
+                         lo=1.0, hi=1e9)
+        rate = _number(data.get('rate_usd_per_t', 20.0), 'rate_usd_per_t',
+                       lo=0.01, hi=1e5)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    hs = FORECAST.get('horizons') or []
+    if not hs:
+        return jsonify({'error': 'no forward horizons available'}), 503
+
+    idx = FORECAST.get('capesize_index')
+    as_of = FORECAST.get('as_of')
+
+    # Find the soonest day and the cheapest day
+    by_day = sorted(hs, key=lambda h: h['horizon_days'])
+    soonest = by_day[0]
+    cheapest = min(hs, key=lambda h: h['expected_move_pct'])
+    dearest = max(hs, key=lambda h: h['expected_move_pct'])
+
+    gap = soonest['expected_move_pct'] - cheapest['expected_move_pct']
+    spread = dearest['expected_move_pct'] - cheapest['expected_move_pct']
+
+    # Typical interval width - how uncertain the model is
+    widths = sorted(h['hi_pct'] - h['lo_pct'] for h in hs)
+    typical = widths[len(widths) // 2]
+    worth_waiting = gap > 0 and gap >= typical * 0.15
+
+    # The exposure calculation: what the rate move means in money
+    # Uses the cheapest-vs-soonest delta applied to the parcel
+    delta_pct = cheapest['expected_move_pct'] - soonest['expected_move_pct']
+    delta_per_t_usd = abs(delta_pct / 100.0) * rate
+    exposure_usd = delta_per_t_usd * parcel
+
+    # USD/INR from the panel
+    fx, fx_date = booking.usd_inr()
+    exposure_inr = exposure_usd * fx if fx else None
+
+    # Format the rupee figure for display
+    LAKH = 1e5
+    CRORE = 1e7
+    rupee_display = None
+    if exposure_inr is not None:
+        if exposure_inr >= CRORE:
+            rupee_display = '₹%.1f crore' % (exposure_inr / CRORE)
+        elif exposure_inr >= LAKH:
+            rupee_display = '₹%.1f lakh' % (exposure_inr / LAKH)
+        else:
+            rupee_display = '₹%s' % format(int(round(exposure_inr)), ',')
+
+    # Projected rates
+    projected_soonest = rate * (1 + soonest['expected_move_pct'] / 100.0)
+    projected_cheapest = rate * (1 + cheapest['expected_move_pct'] / 100.0)
+
+    # Signal strength
+    top_strength = max((h.get('strength_pct') or 0) for h in hs)
+    strong_signal = top_strength >= 50
+
+    # Current-year record
+    year = FORECAST.get('current_year')
+    bad_year = (year and (year.get('skill_pct', 0) < 0
+                or year.get('direction_pct', 100) <= year.get('base_rate_pct', 50)))
+
+    # Decision logic - same as the ahead verdict in dashboard.html
+    if spread < 0.5 or (cheapest['horizon_days'] != soonest['horizon_days']
+                        and not worth_waiting):
+        decision = 'NEUTRAL'
+        headline = 'Fix on berth availability'
+        detail = ('The model expects rates to move %.2f%% at the next '
+                  'opportunity against %.2f%% at their cheapest - a gap of '
+                  '%.2f%% inside a typical %.0f%% interval. That difference '
+                  'is within its own uncertainty.'
+                  % (soonest['expected_move_pct'],
+                     cheapest['expected_move_pct'],
+                     abs(gap), typical))
+    elif cheapest['horizon_days'] == soonest['horizon_days']:
+        decision = 'CHARTER_NOW'
+        headline = 'Charter now — rates rising'
+        detail = ('Rates are expected to rise from here: %+.2f%% by %s and '
+                  '%+.2f%% by %s. The soonest day is the cheapest the model '
+                  'forecasts, so waiting is expected to cost you.'
+                  % (soonest['expected_move_pct'], soonest['target_date'],
+                     dearest['expected_move_pct'], dearest['target_date']))
+    else:
+        wait_days = cheapest['horizon_days'] - soonest['horizon_days']
+        decision = 'WAIT'
+        headline = 'Wait %d day%s' % (wait_days,
+                                       's' if wait_days != 1 else '')
+        detail = ('The cheapest expected day is %s (%+.2f%%), against '
+                  '%+.2f%% if you fix at the next opportunity. Holding is '
+                  'expected to save on this parcel.'
+                  % (cheapest['target_date'],
+                     cheapest['expected_move_pct'],
+                     soonest['expected_move_pct']))
+
+    return jsonify(_json_safe({
+        'decision': decision,
+        'headline': headline,
+        'detail': detail,
+        'as_of': as_of,
+        'capesize_index': idx,
+        'parcel_t': parcel,
+        'rate_usd_per_t': rate,
+        'soonest_date': soonest['target_date'],
+        'soonest_move_pct': soonest['expected_move_pct'],
+        'cheapest_date': cheapest['target_date'],
+        'cheapest_move_pct': cheapest['expected_move_pct'],
+        'gap_pct': gap,
+        'spread_pct': spread,
+        'typical_interval_pct': typical,
+        'wait_days': (cheapest['horizon_days'] - soonest['horizon_days']
+                      if decision == 'WAIT' else 0),
+        'projected_rate_soonest': round(projected_soonest, 2),
+        'projected_rate_cheapest': round(projected_cheapest, 2),
+        'exposure_usd': round(exposure_usd, 2),
+        'exposure_inr': round(exposure_inr, 2) if exposure_inr else None,
+        'rupee_display': rupee_display,
+        'usd_inr': fx,
+        'usd_inr_as_of': fx_date,
+        'signal_strength_pct': top_strength,
+        'strong_signal': strong_signal,
+        'bad_year': bad_year,
+        'interval_pct': FORECAST.get('interval_pct'),
+        'lo_pct': soonest.get('lo_pct'),
+        'hi_pct': soonest.get('hi_pct'),
+    }))
+
+
 @app.route('/api/procurement')
 def api_procurement():
     """What the forecast was worth, as a share of the freight rate.
@@ -614,6 +768,90 @@ def api_optimise():
                    'allowance, and the empty-leg share from PortWatch '
                    'tonnage. Costs are yours - nothing here is a freight '
                    'rate this project has verified.')
+    return jsonify(_json_safe(out))
+
+
+@app.route('/api/portfolio/optimise', methods=['POST'])
+def api_portfolio():
+    """The multi-cargo monthly portfolio optimizer.
+
+    Instead of optimising one shipment at a time, this takes SAIL's whole
+    monthly import plan and returns one jointly-optimised schedule that
+    minimises total cost across all cargoes together, respecting weekly
+    berth limits to avoid port congestion.
+
+    Every cost here arrives in the request body, same as /api/optimise.
+    """
+    if portfolio is None:
+        return jsonify({'error': 'portfolio module is not available; '
+                        'check that src/portfolio.py exists'}), 503
+
+    data, err = _body()
+    if err:
+        return err
+
+    def _money(obj, name):
+        if obj is None:
+            return None
+        if not isinstance(obj, dict):
+            raise ValueError('%s must be an object keyed by name' % name)
+        out = {}
+        for k, v in obj.items():
+            if v is None or v == '':
+                continue
+            out[k] = _number(v, '%s[%s]' % (name, k), lo=0.0)
+        return out
+
+    try:
+        # Accept a preset name or a list of cargoes
+        preset = data.get('preset')
+        cargoes = data.get('cargoes')
+        if preset and not cargoes:
+            if preset not in portfolio.PRESETS:
+                raise ValueError("unknown preset %r; available: %s"
+                                 % (preset, ', '.join(portfolio.PRESETS)))
+            cargoes = portfolio.PRESETS[preset]
+        if not cargoes or not isinstance(cargoes, list):
+            raise ValueError("'cargoes' must be a non-empty list, or "
+                             "supply 'preset' as 'standard' or 'monsoon'")
+
+        voyage = _money(data.get('voyage_cost'), 'voyage_cost') or {}
+        if not voyage:
+            raise ValueError("'voyage_cost' is required")
+
+        kw = dict(
+            port_cost=_money(data.get('port_cost'), 'port_cost'),
+            lighterage_cost=_money(data.get('lighterage_cost'),
+                                   'lighterage_cost'),
+            inland_cost=_money(data.get('inland_cost'), 'inland_cost'),
+        )
+        ballast_pct = data.get('ballast_pct')
+        if ballast_pct not in (None, ''):
+            kw['ballast_pct'] = float(ballast_pct)
+
+        max_calls = data.get('max_calls_per_week')
+        if max_calls is not None:
+            kw['max_calls_per_week'] = _money(max_calls,
+                                              'max_calls_per_week')
+
+        out = portfolio.compare_portfolio(cargoes, voyage, **kw)
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': 'portfolio optimisation failed: %s'
+                        % exc}), 503
+
+    # Attach the FX rate for rupee conversion on the client
+    fx, fx_date = booking.usd_inr()
+    out['usd_inr'] = fx
+    out['usd_inr_as_of'] = fx_date
+    if fx and out.get('portfolio', {}).get('total_cost') is not None:
+        out['total_cost_inr'] = round(out['portfolio']['total_cost'] * fx, 2)
+        out['savings_inr'] = round(out.get('savings_usd', 0) * fx, 2)
+        out['demurrage_avoided_inr'] = round(out.get('demurrage_avoided_usd', 0) * fx, 2)
+    out['presets'] = sorted(portfolio.PRESETS.keys())
+    out['classes'] = sorted(ports.VESSELS)
+    out['ports'] = sorted(ports.PORTS)
     return jsonify(_json_safe(out))
 
 
