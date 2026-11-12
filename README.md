@@ -20,7 +20,7 @@
 SAIL imports millions of tonnes of coking coal and iron ore every year via Capesize and Panamax bulk carriers. Every charter decision is a **seven-figure call** made on a rate that moves daily. Yet today those decisions are driven by:
 
 - ❌ Broker quotes with no independent cross-check
-- ❌ Ship-by-ship bookings that silently create berth queues (₹120k/voyage in demurrage)
+- ❌ Ship-by-ship bookings that silently create berth queues (demurrage often runs to tens of thousands of dollars per voyage)
 - ❌ No quantified measure of model accuracy — just gut-feel forecasts
 
 **Freight Intelligence** is a single-screen operations dashboard that replaces all three.
@@ -78,7 +78,7 @@ Every forecast is genuinely out-of-sample — the model fit on data before date 
 Instead of booking each cargo independently, the portfolio solver jointly schedules SAIL's entire monthly import plan:
 - Decision variables: voyages `x[cargo, vessel, port, week]` + tonnes `t[cargo, vessel, port, week]`
 - Constraints: demand fulfillment, vessel draft limits, weekly berth capacity, cargo laycan windows
-- Saves **$120,000 per avoided demurrage voyage** vs greedy booking
+- Counts an assumed **US$120,000 demurrage cost** (a model input, not a measured saving) for each berth-queue voyage the joint plan avoids versus greedy booking
 - Standard month (4 cargoes, ~460kt): scheduled in **< 200ms** using pre-computed results
 
 ### 3. Naval Physics Engine
